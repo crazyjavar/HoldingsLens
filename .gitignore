@@ -1,3 +1,29 @@
+# OS generated files
 .DS_Store
-holdings.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Dependency directories
 node_modules/
+server/node_modules/
+public/node_modules/
+
+# Local databases
+*.db
+holdings.db
+
+# Local temporary or backup data
+*数据源*.csv

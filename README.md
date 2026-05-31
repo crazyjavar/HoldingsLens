@@ -1,89 +1,67 @@
-# 持仓明细展示系统
+# HoldingsLens 🔍
 
-个人投资组合实时监控工具，支持 A 股、港股 ETF 及个股的持仓展示、盈亏分析与历史趋势追踪。
+**HoldingsLens** 是一个高颜值、极客风的资产持仓可视化分析面板与个人投资助理系统。项目采用赛博朋克暗黑科技风设计，专为追求视觉美感与数据深度的投资者打造。
 
-## 技术栈
+[English](#english) | [简体中文](#简体中文)
 
-### 后端
+---
 
-| 技术 | 版本 | 用途 |
-|------|------|------|
-| [Node.js](https://nodejs.org/) | v22.5+ | 运行时（使用内置 `node:sqlite` 模块） |
-| [Hono](https://hono.dev/) | ^4.7 | Web 框架，提供路由与中间件 |
-| [@hono/node-server](https://github.com/honojs/node-server) | ^1.13 | Hono 的 Node.js 适配器 |
-| [node:sqlite](https://nodejs.org/api/sqlite.html) | 内置 | SQLite 数据库驱动（零依赖） |
-| [pm2](https://pm2.keymetrics.io/) | 全局安装 | 进程守护与自动重启 |
+## 简体中文
 
-### 前端
+### 🌟 核心特性
 
-| 技术 | 用途 |
-|------|------|
-| 原生 HTML + CSS + JavaScript | 页面结构与交互逻辑 |
-| [Chart.js](https://www.chartjs.org/) v4（CDN） | 历史趋势折线图（总市值 / 累计盈亏） |
-| [Google Fonts](https://fonts.google.com/)（CDN） | Space Grotesk、Inter、Orbitron 字体 |
+1. **赛博科技风 UI 设计 (Cyberpunk Dark Aesthetic)**
+   * 采用深色背景（`#060814`）搭配双色霓虹渐变（青色与靛蓝色）的发光气场。
+   * 卡片采用磨砂玻璃拟态设计（Glassmorphism），支持平滑的鼠标悬浮微调及微光边框特效。
+   * 搭载苹果原生 **San Francisco (SF Pro)** 极客数字字体，带来利落、高级的数字阅读体验。
 
-### 数据源
+2. **双重状态 AI 情绪助理 (Sentient AI Companion)**
+   * 面板顶部集成智能助理，根据组合的总盈亏自动激活对应的交互状态：
+     * **治愈贴贴模式（亏损时）**：CSS 渲染的萌系小猫咪，会眨眼、动耳朵、挥爪撒娇，并生成治愈温情的鼓励话语，安抚波动情绪。
+     * **雄霸天下模式（盈利时）**：Canvas 渲染的金色与青色霓虹粒子流和引力波冲击特效，配合霸气、硬核的文字轮播，带来绝对的胜利质感。
 
-| 来源 | 说明 |
-|------|------|
-| 腾讯行情（`qt.gtimg.cn`） | 主数据源，支持 A 股 + 港股实时行情 |
-| 新浪行情（`hq.sinajs.cn`） | 备用数据源，主源失败时自动切换 |
+3. **穿透式资产结构分析 (ETF Look-Through)**
+   * 支持多只 ETF（如中概互联、恒指科技、港股通互联网）底层持仓的深度穿透，一键洞察腾讯、阿里、美团等重仓股的实际真实暴露仓位与比重。
+   * 包含仓位结构分布与盈亏分布图表，直观呈现资产集中度与回撤分布。
 
-### 数据存储
+4. **明细管理与操作记录**
+   * 支持通过本地 `holdings.csv` 文件一键管理持仓，包含成本价、现价、累计盈亏及占比。
+   * 特设“操作记录”列，方便随时追踪仓位的增减调整百分比。
 
-使用 **SQLite**（`holdings.db`），包含两张表：
+### 📂 项目结构
 
-- `holdings` — 每日持仓快照（每条记录对应某天某只证券的详细数据）
-- `daily_summary` — 每日组合汇总（总市值、当日盈亏、累计盈亏等，用于历史趋势图）
+* `持仓明细展示.html` - 核心可视化展示网页，本地双击即可运行。
+* `holdings.csv` - 数据源文件，包含所有持仓的明细与合计数据。
+* `update_holdings.py` - 持仓数据同步/更新脚本（Python 辅助脚本）。
+* `.gitignore` - 已自动配置，用于忽略 macOS 缓存文件 `.DS_Store` 及测试日志文件。
 
-## 项目结构
+---
 
-```
-analysis/
-├── server/
-│   ├── package.json        # 项目依赖
-│   ├── server.js           # 主服务：Hono 路由 + SQLite + 定时抓取
-│   └── fetcher.js          # 行情抓取模块（腾讯/新浪双源）
-├── public/
-│   ├── 持仓明细展示.html   # 前端页面
-│   └── favicon.svg
-├── holdings.db             # SQLite 数据库（自动生成）
-└── README.md
-```
+## English
 
-## API 接口
+### 🌟 Core Features
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/holdings/latest` | 最新一天的持仓列表 + 汇总 |
-| GET | `/api/holdings/history?days=30` | 过去 N 天每日汇总（趋势图数据）|
-| POST | `/api/holdings/refresh` | 手动触发一次行情抓取 |
-| GET | `/api/status` | 服务状态与最后更新时间 |
+1. **Cyberpunk Dark Aesthetic UI**
+   * Deep navy-black background (`#060814`) decorated with subtle cyber grid pattern and dual neon cyan/indigo ambient radial glows.
+   * Glassmorphism panel cards featuring smooth hover transitions and neon border glows.
+   * Integrated Apple native **San Francisco (SF Pro)** typography stack for crisp and clean numerical display.
 
-## 启动与管理
+2. **Sentient AI Companion**
+   * An interactive virtual assistant card built at the top row, dynamically responding to overall portfolio P&L:
+     * **Healing Mascot (Drawdowns)**: A cute CSS animated kitten that winks, twitches ears, waves paws, and rotates comforting quotes to soothe emotion during market dips.
+     * **Overlord Warp Effect (Profits)**: A high-performance Canvas particle storm with expanding circular neon shockwaves and epic dominating lines celebrating your gains.
 
-```bash
-# 安装依赖
-cd server && npm install
+3. **ETF Look-Through Analysis**
+   * Easily calculates underlying holdings (e.g. Tencent, Alibaba, Meituan) across multiple tech ETFs (Hang Seng TECH, CNH Internet) to reveal true asset exposure.
+   * Visualizes asset allocation structure and risk-weighted profit/loss distribution.
 
-# pm2 启动（生产环境）
-pm2 start server.js --name holdings-server
-pm2 save
+4. **Operation Tracker & Logging**
+   * Easily driven by `holdings.csv` containing market value, cost, price, and calculated weights.
+   * Specifically logs adjustments using the "Operation Record" column (percentage of added/reduced positions).
 
-# 常用命令
-pm2 ps                          # 查看进程状态
-pm2 logs holdings-server        # 实时日志
-pm2 restart holdings-server     # 重启服务
+### 📂 Project Structure
 
-# 手动触发行情抓取
-curl -X POST http://localhost:8123/api/holdings/refresh
-```
-
-服务默认监听 **http://localhost:8123**
-
-## 运行机制
-
-- 服务启动时立即抓取一次行情
-- 交易时段（工作日 09:25–15:05 北京时间）每 **5 分钟**自动刷新
-- 前端页面每 **60 秒**静默重新拉取 API 数据
-- 港股汇率通过 `市值 / (现价 × 数量)` 从历史数据反推，无需手动配置
+* `持仓明细展示.html` - The main visualization dashboard. Double-click to open in any browser.
+* `holdings.csv` - Data source file containing raw holdings and totals.
+* `update_holdings.py` - Python script for helper automated data syncing.
+* `.gitignore` - Standard gitignore configuration for OS/log caches.

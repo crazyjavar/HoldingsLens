@@ -413,6 +413,113 @@
     .wl-table tr.drag-over { outline: 2px solid var(--cyan); outline-offset: -2px; background: rgba(0,240,255,0.06) !important; }
     .wl-table tr.dragging  { opacity: 0.35; }
 
+    /* ── 持仓管理面板 ────────────────── */
+    .mgmt-panel { margin-top: 18px; }
+    .mgmt-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .mgmt-toggle .arrow { transition: transform 0.25s; }
+    .mgmt-toggle.open .arrow { transform: rotate(90deg); }
+    .mgmt-body { display: none; padding-top: 14px; }
+    .mgmt-body.open { display: block; }
+
+    .mgmt-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 10px;
+      align-items: end;
+      padding: 14px 20px;
+      background: rgba(15,23,42,0.5);
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    .mgmt-field { display: flex; flex-direction: column; gap: 4px; }
+    .mgmt-label { font-size: 11px; color: var(--muted); letter-spacing: 0.4px; text-transform: uppercase; }
+    .mgmt-input {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(15,23,42,0.7);
+      color: var(--text);
+      padding: 0 11px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+    .mgmt-input:focus { border-color: var(--cyan); box-shadow: 0 0 8px rgba(0,240,255,0.15); }
+    .mgmt-select {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(15,23,42,0.85);
+      color: var(--text);
+      padding: 0 10px;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+      width: 100%;
+    }
+    .mgmt-hint {
+      font-size: 11px;
+      margin-top: 3px;
+      color: var(--cyan);
+      min-height: 15px;
+    }
+    .mgmt-submit {
+      height: 36px;
+      padding: 0 20px;
+      border-radius: 7px;
+      border: 1px solid var(--cyan);
+      background: rgba(0,240,255,0.12);
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+      align-self: end;
+    }
+    .mgmt-submit:hover { background: rgba(0,240,255,0.22); }
+    .mgmt-submit:disabled { opacity: 0.4; pointer-events: none; }
+    .mgmt-err { color: var(--red); font-size: 12px; padding: 4px 20px; }
+
+    .tx-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    .tx-table th, .tx-table td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+      white-space: nowrap;
+      text-align: left; /* 默认均靠左对齐，解决类型、备注等列的表头表体不对齐问题 */
+    }
+    .tx-table th { color: var(--muted); background: rgba(15,23,42,0.7); }
+    /* 数字列右对齐：股数(4)、成交价(5)、花费金额(6) */
+    .tx-table th:nth-child(4), .tx-table td:nth-child(4),
+    .tx-table th:nth-child(5), .tx-table td:nth-child(5),
+    .tx-table th:nth-child(6), .tx-table td:nth-child(6) { text-align: right; }
+    .tx-table td:nth-child(5), .tx-table td:nth-child(6) { font-family: var(--font-tech); }
+    /* 操作列居中对齐 */
+    .tx-table th:nth-child(8), .tx-table td:nth-child(8) { text-align: center; }
+    .tx-table .tx-buy  { color: var(--red); }
+    .tx-table .tx-sell { color: var(--green); }
+    .tx-undo-btn {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(244,63,94,0.4);
+      background: rgba(244,63,94,0.06);
+      color: var(--red);
+      cursor: pointer;
+    }
+    .tx-undo-btn:hover { background: rgba(244,63,94,0.16); }
+    .tx-empty { padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
+
     .history-controls {
       display: flex;
       gap: 8px;
@@ -679,6 +786,76 @@
           <tbody id="wlTableBody"></tbody>
         </table>
         <div id="wlEmpty" class="wl-empty" hidden>暂无自选股，点击“添加”开始监控</div>
+      </div>
+    </section>
+
+    <!-- 持仓变动管理 -->
+    <section class="panel mgmt-panel" aria-label="持仓管理">
+      <div class="panel-header" style="cursor:pointer" id="mgmtToggle">
+        <h2 class="panel-title">持仓变动管理</h2>
+        <span class="mgmt-toggle" id="mgmtToggleLabel">
+          <span class="arrow">▶</span>展开记录交易
+        </span>
+      </div>
+      <div class="mgmt-body" id="mgmtBody">
+        <!-- 交易表单 -->
+        <div class="mgmt-form">
+          <div class="mgmt-field">
+            <label class="mgmt-label">证券</label>
+            <select id="mgmtCode" class="mgmt-select">
+              <option value="">请选择持仓股票</option>
+            </select>
+          </div>
+          <div class="mgmt-field">
+            <label class="mgmt-label">操作</label>
+            <select id="mgmtType" class="mgmt-select">
+              <option value="buy">🟥 买入</option>
+              <option value="sell">🟩 卖出</option>
+            </select>
+          </div>
+          <div class="mgmt-field">
+            <label class="mgmt-label">交易日期</label>
+            <input id="mgmtDate" class="mgmt-input" type="date">
+          </div>
+          <div class="mgmt-field">
+            <label class="mgmt-label">股数</label>
+            <input id="mgmtQty" class="mgmt-input" type="number" min="1" step="1" placeholder="100">
+          </div>
+          <div class="mgmt-field">
+            <label class="mgmt-label">花费金额（元）</label>
+            <input id="mgmtAmt" class="mgmt-input" type="number" min="0.01" step="0.01" placeholder="7320">
+            <div class="mgmt-hint" id="mgmtHint"></div>
+          </div>
+          <div class="mgmt-field">
+            <label class="mgmt-label">备注（可空）</label>
+            <input id="mgmtNote" class="mgmt-input" type="text" placeholder="加仓 / 建仓">
+          </div>
+          <div class="mgmt-field">
+            <label class="mgmt-label">&nbsp;</label>
+            <button id="mgmtSubmit" class="mgmt-submit">✓ 确认记录</button>
+          </div>
+        </div>
+        <div class="mgmt-err" id="mgmtErr"></div>
+
+        <!-- 近期交易记录 -->
+        <div style="padding: 0 0 6px;">
+          <table class="tx-table">
+            <thead>
+              <tr>
+                <th>交易日</th>
+                <th>证券</th>
+                <th>类型</th>
+                <th>股数</th>
+                <th>成交价（原货币）</th>
+                <th>花费（元）</th>
+                <th>备注</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody"></tbody>
+          </table>
+          <div id="txEmpty" class="tx-empty" hidden>暂无交易记录</div>
+        </div>
       </div>
     </section>
 
@@ -1101,7 +1278,158 @@
       }
     });
 
-    // ── 自选股 ──────────────────────────────────────────────────
+    // ── 持仓管理 ──────────────────────────────────────────────
+    let mgmtHoldingsList = [];  // 所有持仓加载后存入，供汇率提示用
+    let cachedFxRateFE   = 0.9148; // 前端缓存汇率
+
+    async function loadMgmt() {
+      const resp = await fetch('/api/base-holdings');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      mgmtHoldingsList = data.holdings || [];
+      if (data.fx_rate) cachedFxRateFE = data.fx_rate;
+
+      // 填充下拉菜单
+      const sel = document.getElementById('mgmtCode');
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">请选择持仓股票</option>' +
+        mgmtHoldingsList.map(h =>
+          `<option value="${h.code}">${h.name}  ${h.code}</option>`
+        ).join('');
+      if (cur) sel.value = cur;
+
+      // 加载全部交易记录
+      await loadAllTx();
+    }
+
+    async function loadAllTx() {
+      const codes = mgmtHoldingsList.map(h => h.code);
+      const allTx = [];
+      await Promise.all(codes.map(async code => {
+        const r = await fetch(`/api/transactions/${encodeURIComponent(code)}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        (d.transactions || []).forEach(t => allTx.push(t));
+      }));
+      // 按交易日降序排序
+      allTx.sort((a, b) => b.trade_date.localeCompare(a.trade_date) || b.id - a.id);
+      renderTxList(allTx.slice(0, 20)); // 最近20条
+    }
+
+    function renderTxList(list) {
+      const tbody = document.getElementById('txTableBody');
+      const empty = document.getElementById('txEmpty');
+      if (!list.length) { tbody.innerHTML = ''; empty.hidden = false; return; }
+      empty.hidden = true;
+      const nameMap = Object.fromEntries(mgmtHoldingsList.map(h => [h.code, h.name]));
+      tbody.innerHTML = list.map(tx => {
+        const cls     = tx.type === 'buy' ? 'tx-buy' : 'tx-sell';
+        const label   = tx.type === 'buy' ? '买入' : '卖出';
+        const priceStr = tx.price.toFixed(4);
+        return `<tr>
+          <td>${tx.trade_date}</td>
+          <td><span class="${cls}">${nameMap[tx.code] || tx.code}</span><br><span style="color:var(--muted);font-size:11px">${tx.code}</span></td>
+          <td class="${cls}">${label}</td>
+          <td>${tx.quantity}</td>
+          <td>${priceStr}</td>
+          <td>¥${tx.amount_cny.toFixed(2)}</td>
+          <td style="color:var(--muted)">${tx.note || '—'}</td>
+          <td><button class="tx-undo-btn" data-id="${tx.id}" onclick="undoTx(this)">撤销</button></td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function undoTx(btn) {
+      const id = btn.dataset.id;
+      const bh = mgmtHoldingsList.find(h => {
+        // 通过表格行找 code
+        const row = btn.closest('tr');
+        const codeTd = row.cells[1].innerText.split('\n')[1];
+        return h.code === codeTd;
+      });
+      const label = bh ? bh.name : '该股票';
+      if (!confirm(`确认撤销这笔交易？持仓数据将回放重算。`)) return;
+      btn.disabled = true;
+      try {
+        const resp = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (!resp.ok) { alert(data.error || '撤销失败'); btn.disabled = false; return; }
+        await Promise.all([loadMgmt(), loadLatest()]);
+      } catch (e) { alert('网络错误'); btn.disabled = false; }
+    }
+
+    // 实时换算提示
+    function updateMgmtHint() {
+      const code = document.getElementById('mgmtCode').value;
+      const qty  = parseFloat(document.getElementById('mgmtQty').value);
+      const amt  = parseFloat(document.getElementById('mgmtAmt').value);
+      const hint = document.getElementById('mgmtHint');
+      if (!code || !(qty > 0) || !(amt > 0)) { hint.textContent = ''; return; }
+      if (code.endsWith('.HK')) {
+        const priceHKD = amt / cachedFxRateFE / qty;
+        hint.textContent = `≈ ${priceHKD.toFixed(3)} HKD/股（汇率 ${cachedFxRateFE.toFixed(4)}）`;
+      } else {
+        const priceCNY = amt / qty;
+        hint.textContent = `= ${priceCNY.toFixed(3)} 元/股`;
+      }
+    }
+    ['mgmtCode','mgmtQty','mgmtAmt'].forEach(id =>
+      document.getElementById(id).addEventListener('input', updateMgmtHint)
+    );
+
+    // 折叠展开
+    document.getElementById('mgmtToggle').addEventListener('click', () => {
+      const body  = document.getElementById('mgmtBody');
+      const label = document.getElementById('mgmtToggleLabel');
+      const open  = body.classList.toggle('open');
+      label.classList.toggle('open', open);
+      label.querySelector('.arrow').textContent = open ? '▼' : '▶';
+      label.childNodes[1].textContent = open ? '收起' : '展开记录交易';
+      if (open) loadMgmt();
+    });
+
+    // 默认日期 = 今天
+    document.getElementById('mgmtDate').value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
+
+    // 提交交易
+    document.getElementById('mgmtSubmit').addEventListener('click', async () => {
+      const code = document.getElementById('mgmtCode').value;
+      const type = document.getElementById('mgmtType').value;
+      const date = document.getElementById('mgmtDate').value;
+      const qty  = document.getElementById('mgmtQty').value;
+      const amt  = document.getElementById('mgmtAmt').value;
+      const note = document.getElementById('mgmtNote').value.trim();
+      const errEl = document.getElementById('mgmtErr');
+      const btn   = document.getElementById('mgmtSubmit');
+      errEl.textContent = '';
+      if (!code) { errEl.textContent = '请选择证券'; return; }
+      if (!date) { errEl.textContent = '请选择交易日期'; return; }
+      if (!(Number(qty) > 0)) { errEl.textContent = '股数必须大于 0'; return; }
+      if (!(Number(amt) > 0)) { errEl.textContent = '金额必须大于 0'; return; }
+      btn.disabled = true; btn.textContent = '提交中...';
+      try {
+        const resp = await fetch('/api/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, type, trade_date: date, quantity: Number(qty), amount_cny: Number(amt), note }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { errEl.textContent = data.error || '提交失败'; return; }
+        // 清空输入
+        document.getElementById('mgmtQty').value  = '';
+        document.getElementById('mgmtAmt').value  = '';
+        document.getElementById('mgmtNote').value = '';
+        document.getElementById('mgmtHint').textContent = '';
+        // 刷新持仓 + 交易记录
+        await Promise.all([loadMgmt(), loadLatest()]);
+      } catch (e) {
+        errEl.textContent = '网络错误';
+      } finally {
+        btn.disabled = false; btn.textContent = '✓ 确认记录';
+      }
+    });
+
+    // ── 自选股 ──────────────────────────────────────────────
     async function loadWatchlist() {
       const resp = await fetch('/api/watchlist');
       if (!resp.ok) return;

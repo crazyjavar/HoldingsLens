@@ -53,6 +53,27 @@ db.exec(`
     updated_at    TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS base_holdings (
+    code       TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    cost       REAL NOT NULL,
+    quantity   REAL NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS transactions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    code       TEXT NOT NULL,
+    type       TEXT NOT NULL,
+    trade_date TEXT NOT NULL,
+    price      REAL NOT NULL,
+    quantity   REAL NOT NULL,
+    amount_cny REAL NOT NULL,
+    fx_rate    REAL NOT NULL DEFAULT 1.0,
+    note       TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS watchlist (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     code        TEXT NOT NULL UNIQUE,
@@ -75,20 +96,35 @@ db.exec(`
   );
 `);
 
-// ── 持仓基础数据（代码、名称、成本价、数量）──────────────
-// 从 CSV 迁移的初始持仓，后续支持通过 API 动态管理
-const BASE_HOLDINGS = [
-  { code: '512170.SH', name: '医疗ETF',       cost: 0.334, quantity: 444700 },
-  { code: '159938.SZ', name: '医药ETF广发',   cost: 0.591, quantity: 118600 },
-  { code: '03690.HK',  name: '美团-W',        cost: 106.846, quantity: 700  },
-  { code: '513180.SH', name: '恒指科技',      cost: 0.754, quantity: 49600  },
-  { code: '513050.SH', name: '中概互联',      cost: 0.972, quantity: 25500  },
-  { code: '09988.HK',  name: '阿里巴巴-W',    cost: 139.333, quantity: 200  },
-  { code: '01024.HK',  name: '快手-W',        cost: 47.194, quantity: 200   },
-  { code: '06865.HK',  name: '福莱特玻璃',   cost: 10.14, quantity: 1000    },
-  { code: '512880.SH', name: '证券ETF',       cost: 0.889, quantity: 5000   },
-  { code: '513040.SH', name: '港股通互联网ETF', cost: 1.297, quantity: 45700 },
+// ── 持仓基础数据种子（仅用于首次初始化 base_holdings 表）────
+// 后续所有修改通过 /api/transactions 完成，此处不再参与计算
+const SEED_HOLDINGS = [
+  { code: '512170.SH', name: '医疗ETF',          cost: 0.334,    quantity: 444700 },
+  { code: '159938.SZ', name: '医药ETF广发',       cost: 0.591,    quantity: 118600 },
+  { code: '03690.HK',  name: '美团-W',            cost: 106.846,  quantity: 700    },
+  { code: '513180.SH', name: '恒指科技',          cost: 0.754,    quantity: 49600  },
+  { code: '513050.SH', name: '中概互联',          cost: 0.972,    quantity: 25500  },
+  { code: '09988.HK',  name: '阿里巴巴-W',        cost: 139.333,  quantity: 200    },
+  { code: '01024.HK',  name: '快手-W',            cost: 47.194,   quantity: 200    },
+  { code: '06865.HK',  name: '福莱特玻璃',        cost: 10.14,    quantity: 1000   },
+  { code: '512880.SH', name: '证券ETF',           cost: 0.889,    quantity: 5000   },
+  { code: '513040.SH', name: '港股通互联网ETF',   cost: 1.297,    quantity: 45700  },
 ];
+
+// 启动时：若 base_holdings 为空则将种子数据写入
+{
+  const count = db.prepare('SELECT COUNT(*) AS n FROM base_holdings').get();
+  if (!count || count['n'] === 0) {
+    const insert = db.prepare(
+      'INSERT OR IGNORE INTO base_holdings (code, name, cost, quantity, updated_at) VALUES (?, ?, ?, ?, ?)'
+    );
+    const now = new Date().toISOString();
+    db.exec('BEGIN');
+    for (const h of SEED_HOLDINGS) insert.run(h.code, h.name, h.cost, h.quantity, now);
+    db.exec('COMMIT');
+    console.log('[init] base_holdings 已从种子数据初始化');
+  }
+}
 
 // ── 汇率推算（HK 股需要港币→人民币换算）────────────────────
 // 使用已知市值反推汇率，保持与原 Python 逻辑一致
@@ -143,7 +179,9 @@ export async function refreshHoldings() {
   console.log(`[refresh] 开始抓取行情 ${startedAt}`);
 
   try {
-    const symbols = BASE_HOLDINGS.map(h => toSymbol(h.code));
+    // 从 DB 读取持仓（取代硬编码 SEED_HOLDINGS）
+    const baseHoldings = db.prepare('SELECT * FROM base_holdings').all();
+    const symbols = baseHoldings.map(h => toSymbol(h['code']));
     const quotes = await fetchPrices(symbols);
 
     const today = new Date().toLocaleString('en-CA', {
@@ -161,13 +199,16 @@ export async function refreshHoldings() {
 
     const rows = [];
 
-    for (const holding of BASE_HOLDINGS) {
+    for (const holding of baseHoldings) {
       const sym = toSymbol(holding.code);
       const quote = quotes[sym];
       if (!quote) continue;
 
       const { current, previousClose } = quote;
-      const { code, name, cost, quantity } = holding;
+      const code     = holding['code'];
+      const name     = holding['name'];
+      const cost     = holding['cost'];
+      const quantity = holding['quantity'];
 
       // 港股需要换算汇率
       const isHK = code.endsWith('.HK');
@@ -372,6 +413,157 @@ app.get('/api/status', (c) => {
     lastRefresh: lastRefreshTime,
     totalDays: n,
     tradingHours: isTradingHours(),
+  });
+});
+
+// ── 持仓管理 API ──────────────────────────────────────────
+
+/** GET /api/base-holdings — 获取所有持仓基础数据（含交易笔数）*/
+app.get('/api/base-holdings', (c) => {
+  const rows = db.prepare('SELECT * FROM base_holdings ORDER BY code').all();
+  const result = rows.map(r => {
+    const txCount = db.prepare(
+      'SELECT COUNT(*) AS n FROM transactions WHERE code = ?'
+    ).get(r['code']);
+    return {
+      code:       r['code'],
+      name:       r['name'],
+      cost:       r['cost'],
+      quantity:   r['quantity'],
+      updated_at: r['updated_at'],
+      tx_count:   txCount ? txCount['n'] : 0,
+    };
+  });
+  return c.json({ holdings: result, fx_rate: cachedFxRate });
+});
+
+/**
+ * POST /api/transactions — 新增一笔交易（买入/卖出）
+ * body: { code, type:'buy'|'sell', trade_date, quantity, amount_cny, note? }
+ */
+app.post('/api/transactions', async (c) => {
+  let body;
+  try { body = await c.req.json(); } catch { return c.json({ error: '请求体解析失败' }, 400); }
+
+  const code      = (body.code || '').trim().toUpperCase();
+  const type      = (body.type || '').trim().toLowerCase();
+  const tradeDate = (body.trade_date || '').trim();
+  const quantity  = Number(body.quantity);
+  const amountCny = Number(body.amount_cny);
+  const note      = (body.note || '').trim();
+
+  if (!code)              return c.json({ error: '证券代码不能为空' }, 400);
+  if (!['buy','sell'].includes(type)) return c.json({ error: 'type 必须为 buy 或 sell' }, 400);
+  if (!tradeDate)         return c.json({ error: '交易日期不能为空' }, 400);
+  if (!(quantity > 0))    return c.json({ error: '股数必须大于0' }, 400);
+  if (!(amountCny > 0))   return c.json({ error: '金额必须大于0' }, 400);
+
+  // 查当前持仓
+  const bh = db.prepare('SELECT * FROM base_holdings WHERE code = ?').get(code);
+  if (!bh) return c.json({ error: `${code} 不在持仓列表中，请先添加持仓` }, 404);
+
+  // 卖出不超过持仓
+  if (type === 'sell' && quantity > bh['quantity']) {
+    return c.json({
+      error: `卖出 ${quantity} 股超过当前持仓 ${bh['quantity']} 股`
+    }, 400);
+  }
+
+  // 推算成交价（原始货币）
+  const isHK  = code.endsWith('.HK');
+  const fxRate = isHK ? cachedFxRate : 1.0;
+  // 港股: CNY / 汇率 / 股数 = HKD 每股; A股: CNY / 股数 = CNY 每股
+  const price = amountCny / fxRate / quantity;
+
+  // 写入 transactions 表
+  db.prepare(`
+    INSERT INTO transactions (code, type, trade_date, price, quantity, amount_cny, fx_rate, note, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(code, type, tradeDate, price, quantity, amountCny, fxRate, note, new Date().toISOString());
+
+  // 回放重算 base_holdings（从第一笔交易开始累计）
+  replayHolding(code, bh['name']);
+
+  const updated = db.prepare('SELECT * FROM base_holdings WHERE code = ?').get(code);
+  console.log(`[tx] ${type} ${code} ×${quantity} @¥${amountCny} → 新成本 ${updated['cost'].toFixed(4)}, 持仓 ${updated['quantity']}`);
+
+  return c.json({
+    ok: true,
+    code,
+    type,
+    price: Math.round(price * 10000) / 10000,
+    quantity,
+    amount_cny: amountCny,
+    new_cost:   updated['cost'],
+    new_quantity: updated['quantity'],
+  });
+});
+
+/**
+ * 回放重算某只股票的 base_holdings
+ * 从初始种子成本出发，按时间顺序叠加所有交易记录
+ */
+function replayHolding(code, name) {
+  // 种子数据（初始化时写入的第一条记录视为初始状态）
+  const seed = SEED_HOLDINGS.find(h => h.code === code);
+  let cost     = seed ? seed.cost     : 0;
+  let quantity = seed ? seed.quantity : 0;
+
+  // 按交易日期升序回放所有交易
+  const txList = db.prepare(
+    'SELECT * FROM transactions WHERE code = ? ORDER BY trade_date ASC, created_at ASC'
+  ).all(code);
+
+  for (const tx of txList) {
+    const txQty   = tx['quantity'];
+    const txPrice = tx['price'];
+    if (tx['type'] === 'buy') {
+      // 加权平均成本
+      const newQty  = quantity + txQty;
+      cost     = newQty > 0 ? (cost * quantity + txPrice * txQty) / newQty : cost;
+      quantity = newQty;
+    } else {
+      // 卖出：数量减少，成本不变
+      quantity = Math.max(0, quantity - txQty);
+    }
+  }
+
+  db.prepare(`
+    UPDATE base_holdings SET cost = ?, quantity = ?, updated_at = ? WHERE code = ?
+  `).run(cost, quantity, new Date().toISOString(), code);
+}
+
+/** GET /api/transactions/:code — 查询某只股票的交易历史 */
+app.get('/api/transactions/:code', (c) => {
+  const code = c.req.param('code').toUpperCase();
+  const rows = db.prepare(
+    'SELECT * FROM transactions WHERE code = ? ORDER BY trade_date DESC, created_at DESC'
+  ).all(code);
+  return c.json({ code, transactions: rows });
+});
+
+/** DELETE /api/transactions/:id — 撤销一笔交易（回放重算）*/
+app.delete('/api/transactions/:id', (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  const tx = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+  if (!tx) return c.json({ error: `交易记录 #${id} 不存在` }, 404);
+
+  const code = tx['code'];
+  const bh   = db.prepare('SELECT name FROM base_holdings WHERE code = ?').get(code);
+  const name = bh ? bh['name'] : code;
+
+  db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
+  replayHolding(code, name);
+
+  const updated = db.prepare('SELECT * FROM base_holdings WHERE code = ?').get(code);
+  console.log(`[tx] 撤销 #${id}，${code} 回放后: 成本 ${updated['cost'].toFixed(4)}, 持仓 ${updated['quantity']}`);
+
+  return c.json({
+    ok: true,
+    deleted_id: id,
+    code,
+    new_cost:     updated['cost'],
+    new_quantity: updated['quantity'],
   });
 });
 
