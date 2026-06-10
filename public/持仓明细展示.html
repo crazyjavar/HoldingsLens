@@ -1420,21 +1420,22 @@
         const pnlEl = document.getElementById('totalPnl');
         pnlEl.textContent = '¥****';
         pnlEl.className   = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
-        document.getElementById('totalPnlRate').textContent = '组合收益率 **%';
+        document.getElementById('totalPnlRate').textContent = `组合收益率 ${formatPercent(totalRate)}`;
 
         const dayEl = document.getElementById('dayPnl');
         dayEl.textContent = '¥****';
         dayEl.className   = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
-        document.getElementById('dayPnlRate').textContent = '相对昨收 **%';
+        document.getElementById('dayPnlRate').textContent = `相对昨收 ${formatPercent(totalDayRate)}`;
 
         const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
+        const monthPnlRate = s ? toNum(s.month_pnl_pct) : 0;
         const monthEl = document.getElementById('monthPnl');
         monthEl.textContent = '¥****';
         monthEl.className   = `kpi-value ${monthPnl >= 0 ? 'positive' : 'negative'}`;
-        document.getElementById('monthPnlRate').textContent = '本月累计 **%';
+        document.getElementById('monthPnlRate').textContent = `本月累计 ${formatPercent(monthPnlRate)}`;
 
-        document.getElementById('topWeight').textContent  = '**%';
-        document.getElementById('top3Weight').textContent = '**%';
+        document.getElementById('topWeight').textContent  = formatPercent(top.weight);
+        document.getElementById('top3Weight').textContent = formatPercent(top3);
       } else if (isSilent) {
         // 如果是静默更新
         document.getElementById('totalMarket').textContent = moneyFormatter.format(totalMarket);
@@ -1722,12 +1723,12 @@
           <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
           <td>${state.hideValues ? '****' : (x.costPrice === '-' ? '-' : moneyFormatter.format(toNum(x.costPrice)))}</td>
           <td>${state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : moneyFormatter.format(toNum(x.currentPrice)))}</td>
-          <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '**%' : formatPercent(x.dayPnlRate)}</td>
+          <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatPercent(x.dayPnlRate)}</td>
           <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
           <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
-          <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${state.hideValues ? '**%' : formatPercent(x.pnlRate)}</span></td>
+          <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
           <td>${formatPercent(x.weight)}</td>
-          <td>${state.hideValues ? '**%' : x.change}</td>
+          <td>${x.change}</td>
         </tr>`).join('');
 
       // 若非静默刷新，执行 GSAP 行错开渐显位移动画
@@ -1977,12 +1978,11 @@
       empty.hidden = true;
       container.innerHTML = list.map(item => {
         const isHK     = item.code.endsWith('.HK');
-        const priceStr = state.hideValues ? '****' : (item.current_price != null ? item.current_price.toFixed(3) : '—');
+        const priceStr = item.current_price != null ? item.current_price.toFixed(3) : '—';
         const dayClass = item.day_pct ? (parseFloat(item.day_pct) >= 0 ? 'positive' : 'negative') : '';
-        const dayStr   = state.hideValues ? '**%' : (item.day_pct || '—');
+        const dayStr   = item.day_pct || '—';
         const totalPctVal = toNum(item.total_pct);
         const compareClass = totalPctVal >= 0 ? 'positive' : 'negative';
-        const compareVal   = state.hideValues ? '**%' : pctBadgeValueOnly(item.total_pct);
         
         return `
           <div class="wl-item ${isHK ? 'hk-row' : ''}" draggable="true" data-code="${item.code}">
@@ -1999,7 +1999,7 @@
             <div class="wl-item-right">
               <div class="wl-price-box">
                 <div class="wl-current-price">${priceStr}</div>
-                <div class="wl-added-compare">比成本 <span class="${compareClass}">${compareVal}</span></div>
+                <div class="wl-added-compare">比成本 <span class="${compareClass}">${pctBadgeValueOnly(item.total_pct)}</span></div>
               </div>
               <div class="wl-pct-badge-wrapper">
                 <span class="wl-pct-badge-pill ${dayClass}">${dayStr}</span>
