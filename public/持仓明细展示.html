@@ -7,6 +7,7 @@
   <meta name="description" content="个人持仓明细实时展示，含历史趋势、盈亏分析、仓位结构">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
 
@@ -1292,6 +1293,33 @@
       return '其他';
     }
 
+    // ── 动画化工具 ───────────────────────────────────────────
+    function animateNumericKpi(elementId, targetVal, startVal = 0, isPercent = false, prefix = '') {
+      const el = document.getElementById(elementId);
+      if (!el) return;
+      if (typeof gsap === 'undefined') {
+        const valStr = isPercent ? formatPercent(targetVal) : moneyFormatter.format(targetVal);
+        el.textContent = prefix + valStr;
+        return;
+      }
+      if (Math.abs(targetVal - startVal) < 0.001 && targetVal !== 0 && startVal !== 0) {
+        const valStr = isPercent ? formatPercent(targetVal) : moneyFormatter.format(targetVal);
+        el.textContent = prefix + valStr;
+        return;
+      }
+      const obj = { value: startVal };
+      gsap.to(obj, {
+        value: targetVal,
+        duration: 0.8,
+        ease: "power2.out",
+        overwrite: "auto",
+        onUpdate: () => {
+          const valStr = isPercent ? formatPercent(obj.value) : moneyFormatter.format(obj.value);
+          el.textContent = prefix + valStr;
+        }
+      });
+    }
+
     // ── 状态 ────────────────────────────────────────────────
     const state = {
       holdings: [],
@@ -1300,10 +1328,21 @@
       search: '',
       sort: 'weight-desc',
       historyDays: 30,
+      prevValues: {
+        totalMarket: 0,
+        totalPnl: 0,
+        totalPnlRate: 0,
+        dayPnl: 0,
+        dayPnlRate: 0,
+        monthPnl: 0,
+        monthPnlRate: 0,
+        topWeight: 0,
+        top3Weight: 0
+      }
     };
 
     // ── 数据加载 ─────────────────────────────────────────────
-    async function loadLatest() {
+    async function loadLatest(isSilent = false) {
       const resp = await fetch('/api/holdings/latest');
       if (!resp.ok) throw new Error(`API ${resp.status}`);
       const data = await resp.json();
@@ -1328,7 +1367,7 @@
 
       state.summary = data.summary;
       document.getElementById('sourceState').textContent = 'API 实时数据';
-      render();
+      render(isSilent);
     }
 
     async function loadHistory(days) {
@@ -1339,7 +1378,7 @@
     }
 
     // ── KPI 渲染 ──────────────────────────────────────────────
-    function renderKpis() {
+    function renderKpis(isSilent = false) {
       const h = state.holdings;
       const s = state.summary;
 
@@ -1354,29 +1393,63 @@
       const top3   = sorted.slice(0, 3).reduce((a, x) => a + x.weight, 0);
       const gains  = h.filter(x => x.pnl >= 0).length;
 
-      document.getElementById('totalMarket').textContent = moneyFormatter.format(totalMarket);
+      // 如果是静默更新
+      if (isSilent) {
+        document.getElementById('totalMarket').textContent = moneyFormatter.format(totalMarket);
+        
+        const pnlEl = document.getElementById('totalPnl');
+        pnlEl.textContent = moneyFormatter.format(totalPnl);
+        pnlEl.className   = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+        document.getElementById('totalPnlRate').textContent = `组合收益率 ${formatPercent(totalRate)}`;
+
+        const dayEl = document.getElementById('dayPnl');
+        dayEl.textContent = moneyFormatter.format(totalDayPnl);
+        dayEl.className   = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
+        document.getElementById('dayPnlRate').textContent = `相对昨收 ${formatPercent(totalDayRate)}`;
+
+        const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
+        const monthPnlRate = s ? toNum(s.month_pnl_pct) : 0;
+        const monthEl = document.getElementById('monthPnl');
+        monthEl.textContent = moneyFormatter.format(monthPnl);
+        monthEl.className   = `kpi-value ${monthPnl >= 0 ? 'positive' : 'negative'}`;
+        document.getElementById('monthPnlRate').textContent = `本月累计 ${formatPercent(monthPnlRate)}`;
+
+        document.getElementById('topWeight').textContent  = formatPercent(top.weight);
+        document.getElementById('top3Weight').textContent = formatPercent(top3);
+      } else {
+        // 使用 GSAP 数字滚动动画
+        const prev = state.prevValues || {
+          totalMarket: 0, totalPnl: 0, totalPnlRate: 0,
+          dayPnl: 0, dayPnlRate: 0, monthPnl: 0, monthPnlRate: 0,
+          topWeight: 0, top3Weight: 0
+        };
+        
+        animateNumericKpi('totalMarket', totalMarket, prev.totalMarket);
+        
+        const pnlEl = document.getElementById('totalPnl');
+        pnlEl.className = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+        animateNumericKpi('totalPnl', totalPnl, prev.totalPnl);
+        animateNumericKpi('totalPnlRate', totalRate, prev.totalPnlRate, true, '组合收益率 ');
+
+        const dayEl = document.getElementById('dayPnl');
+        dayEl.className = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
+        animateNumericKpi('dayPnl', totalDayPnl, prev.dayPnl);
+        animateNumericKpi('dayPnlRate', totalDayRate, prev.dayPnlRate, true, '相对昨收 ');
+
+        const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
+        const monthPnlRate = s ? toNum(s.month_pnl_pct) : 0;
+        const monthEl = document.getElementById('monthPnl');
+        monthEl.className = `kpi-value ${monthPnl >= 0 ? 'positive' : 'negative'}`;
+        animateNumericKpi('monthPnl', monthPnl, prev.monthPnl);
+        animateNumericKpi('monthPnlRate', monthPnlRate, prev.monthPnlRate, true, '本月累计 ');
+
+        animateNumericKpi('topWeight', top.weight, prev.topWeight, true);
+        animateNumericKpi('top3Weight', top3, prev.top3Weight, true);
+      }
+
+      // 无论静默与否，直接渲染非数字滚动内容及保存状态
       document.getElementById('holdingCount').textContent = `${h.length} 个持仓标的`;
-
-      const pnlEl = document.getElementById('totalPnl');
-      pnlEl.textContent = moneyFormatter.format(totalPnl);
-      pnlEl.className   = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
-      document.getElementById('totalPnlRate').textContent = `组合收益率 ${formatPercent(totalRate)}`;
-
-      const dayEl = document.getElementById('dayPnl');
-      dayEl.textContent = moneyFormatter.format(totalDayPnl);
-      dayEl.className   = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
-      document.getElementById('dayPnlRate').textContent = `相对昨收 ${formatPercent(totalDayRate)}`;
-
-      const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
-      const monthPnlRate = s ? toNum(s.month_pnl_pct) : 0;
-      const monthEl = document.getElementById('monthPnl');
-      monthEl.textContent = moneyFormatter.format(monthPnl);
-      monthEl.className   = `kpi-value ${monthPnl >= 0 ? 'positive' : 'negative'}`;
-      document.getElementById('monthPnlRate').textContent = `本月累计 ${formatPercent(monthPnlRate)}`;
-
-      document.getElementById('topWeight').textContent  = formatPercent(top.weight);
       document.getElementById('topHolding').textContent = top.name;
-      document.getElementById('top3Weight').textContent = formatPercent(top3);
       document.getElementById('gainCount').textContent  = `${gains} 个`;
       document.getElementById('lossCount').textContent  = `${h.length - gains} 个`;
 
@@ -1384,6 +1457,19 @@
       document.getElementById('asOf').textContent    = date;
       document.getElementById('subtitle').textContent =
         `截至 ${date}，组合总市值 ${moneyFormatter.format(totalMarket)}，当日盈亏 ${moneyFormatter.format(totalDayPnl)}，累计盈亏 ${moneyFormatter.format(totalPnl)}。`;
+
+      // 保存本次的值供下次作为起点
+      state.prevValues = {
+        totalMarket,
+        totalPnl,
+        totalPnlRate: totalRate,
+        dayPnl: totalDayPnl,
+        dayPnlRate: totalDayRate,
+        monthPnl: s ? (s.month_pnl ?? 0) : 0,
+        monthPnlRate: s ? toNum(s.month_pnl_pct) : 0,
+        topWeight: top.weight,
+        top3Weight: top3
+      };
 
       renderEffect(totalRate, totalDayPnl);
     }
@@ -1576,7 +1662,7 @@
       return filtered.sort(sorters[state.sort]);
     }
 
-    function renderTable() {
+    function renderTable(isSilent = false) {
       const rows  = currentRows();
       const tbody = document.getElementById('holdingTable');
       const empty = document.getElementById('emptyState');
@@ -1600,13 +1686,21 @@
           <td>${formatPercent(x.weight)}</td>
           <td>${x.change}</td>
         </tr>`).join('');
+
+      // 若非静默刷新，执行 GSAP 行错开渐显位移动画
+      if (!isSilent && rows.length > 0 && typeof gsap !== 'undefined') {
+        gsap.fromTo("#holdingTable tr", 
+          { autoAlpha: 0, y: 10 }, 
+          { autoAlpha: 1, y: 0, duration: 0.35, stagger: 0.02, ease: "power2.out", clearProps: "all" }
+        );
+      }
     }
 
-    function render() {
-      renderKpis();
+    function render(isSilent = false) {
+      renderKpis(isSilent);
       renderAllocation();
       renderPnl();
-      renderTable();
+      renderTable(isSilent);
     }
 
     // ── 事件监听 ──────────────────────────────────────────────
@@ -1804,11 +1898,11 @@
     });
 
     // ── 自选股 ──────────────────────────────────────────────
-    async function loadWatchlist() {
+    async function loadWatchlist(isSilent = false) {
       const resp = await fetch('/api/watchlist');
       if (!resp.ok) return;
       const data = await resp.json();
-      renderWatchlist(data.watchlist || []);
+      renderWatchlist(data.watchlist || [], isSilent);
     }
 
     function pctBadgeValueOnly(totalPct) {
@@ -1828,7 +1922,7 @@
       return '';
     }
 
-    function renderWatchlist(list) {
+    function renderWatchlist(list, isSilent = false) {
       wlList = list;
       const container = document.getElementById('wlTableBody');
       const empty = document.getElementById('wlEmpty');
@@ -1873,6 +1967,14 @@
 
       // 绑定拖拽事件
       initDragSort(container);
+
+      // 若非静默刷新，执行 GSAP Stagger 入场动效
+      if (!isSilent && list.length > 0 && typeof gsap !== 'undefined') {
+        gsap.fromTo("#wlTableBody .wl-item", 
+          { autoAlpha: 0, x: 15 }, 
+          { autoAlpha: 1, x: 0, duration: 0.4, stagger: 0.03, ease: "power2.out", clearProps: "all" }
+        );
+      }
     }
 
     async function deleteWatchitem(btn) {
@@ -1883,7 +1985,7 @@
         const resp = await fetch(`/api/watchlist/${encodeURIComponent(code)}`, { method: 'DELETE' });
         const data = await resp.json();
         if (!resp.ok) { alert(data.error || '删除失败'); btn.disabled = false; return; }
-        await loadWatchlist();
+        await loadWatchlist(false);
       } catch (e) { alert('网络错误'); btn.disabled = false; }
     }
 
@@ -1968,17 +2070,52 @@
         document.getElementById('wlCode').value = '';
         document.getElementById('wlName').value = '';
         document.getElementById('wlNote').value = '';
-        await loadWatchlist();
+        await loadWatchlist(false);
       } catch (e) {
         errEl.textContent = '网络错误，请稍后重试';
       } finally {
         btn.disabled = false;
         btn.textContent = '➕ 确认添加';
         // 自动折叠面板
-        document.getElementById('wlAddPanel').style.display = 'none';
-        document.getElementById('wlAddToggleBtn').textContent = '＋';
+        toggleWlAddPanel(false);
       }
     });
+
+    // ── 自选添加面板滑动切换动画 ──────────────────────────────────
+    function toggleWlAddPanel(show) {
+      const panel = document.getElementById('wlAddPanel');
+      const btn = document.getElementById('wlAddToggleBtn');
+      if (!panel || !btn) return;
+      if (show) {
+        btn.textContent = '－';
+        if (typeof gsap !== 'undefined') {
+          gsap.set(panel, { display: 'block', height: 0, autoAlpha: 0 });
+          gsap.to(panel, {
+            height: 'auto',
+            autoAlpha: 1,
+            duration: 0.35,
+            ease: 'power2.out'
+          });
+        } else {
+          panel.style.display = 'block';
+        }
+      } else {
+        btn.textContent = '＋';
+        if (typeof gsap !== 'undefined') {
+          gsap.to(panel, {
+            height: 0,
+            autoAlpha: 0,
+            duration: 0.3,
+            ease: 'power2.in',
+            onComplete: () => {
+              panel.style.display = 'none';
+            }
+          });
+        } else {
+          panel.style.display = 'none';
+        }
+      }
+    }
 
     /**
      * 智能补全证券代码格式
@@ -2023,7 +2160,19 @@
         
         // 激活内容展示
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        document.getElementById(`tab-${tabName}`).classList.add('active');
+        const activeTab = document.getElementById(`tab-${tabName}`);
+        activeTab.classList.add('active');
+
+        // 执行 GSAP Tab 内容入场动画
+        if (typeof gsap !== 'undefined') {
+          const children = activeTab.children;
+          if (children.length > 0) {
+            gsap.fromTo(children,
+              { autoAlpha: 0, y: 15 },
+              { autoAlpha: 1, y: 0, duration: 0.45, stagger: 0.05, ease: "power2.out", clearProps: "all" }
+            );
+          }
+        }
         
         // 如果切回 overview 重新 resize 图表以防 canvas 宽度变为 0
         if (tabName === 'overview' && historyChartInstance) {
@@ -2041,9 +2190,8 @@
     // ── 自选股添加表单展开/收折控制 ───────────────────────────
     document.getElementById('wlAddToggleBtn').addEventListener('click', () => {
       const panel = document.getElementById('wlAddPanel');
-      const isHidden = panel.style.display === 'none';
-      panel.style.display = isHidden ? 'block' : 'none';
-      document.getElementById('wlAddToggleBtn').textContent = isHidden ? '－' : '＋';
+      const isHidden = panel.style.display === 'none' || panel.style.height === '0px';
+      toggleWlAddPanel(isHidden);
     });
 
     // ── 动态自选股组件位置挂载逻辑 ─────────────────────────────
@@ -2071,9 +2219,9 @@
       adjustWatchlistPosition();
       try {
         await Promise.all([
-          loadLatest(),
+          loadLatest(false),
           loadHistory(state.historyDays),
-          loadWatchlist(),
+          loadWatchlist(false),
           loadMgmt(),
         ]);
       } catch (err) {
@@ -2088,9 +2236,9 @@
     setInterval(async () => {
       try {
         await Promise.all([
-          loadLatest(),
+          loadLatest(true),
           loadHistory(state.historyDays),
-          loadWatchlist(),
+          loadWatchlist(true),
         ]);
       } catch (_) {}
     }, 60 * 1000);
