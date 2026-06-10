@@ -130,6 +130,24 @@
     .refresh-btn:hover { color: var(--cyan); border-color: var(--cyan); }
     .refresh-btn.loading { opacity: 0.5; pointer-events: none; }
 
+    /* 隐私控制按钮 */
+    .privacy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      margin-left: 6px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .privacy-btn:hover { color: var(--cyan); border-color: var(--cyan); }
+
     /* ── KPI 网格 ────────────────────── */
     .top-row-grid {
       display: grid;
@@ -995,6 +1013,7 @@
             <strong id="asOf">--</strong>
             <span id="sourceState">连接服务...</span>
             <button class="refresh-btn" id="refreshBtn" type="button">⟳ 立即刷新</button>
+            <button class="privacy-btn" id="privacyBtn" type="button" title="隐藏敏感数值">👁 隐藏数值</button>
           </div>
         </div>
         <nav class="nav-tabs">
@@ -1328,6 +1347,7 @@
       search: '',
       sort: 'weight-desc',
       historyDays: 30,
+      hideValues: false,
       prevValues: {
         totalMarket: 0,
         totalPnl: 0,
@@ -1393,8 +1413,30 @@
       const top3   = sorted.slice(0, 3).reduce((a, x) => a + x.weight, 0);
       const gains  = h.filter(x => x.pnl >= 0).length;
 
-      // 如果是静默更新
-      if (isSilent) {
+      // 如果是隐藏数值模式
+      if (state.hideValues) {
+        document.getElementById('totalMarket').textContent = '¥****';
+        
+        const pnlEl = document.getElementById('totalPnl');
+        pnlEl.textContent = '¥****';
+        pnlEl.className   = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+        document.getElementById('totalPnlRate').textContent = '组合收益率 **%';
+
+        const dayEl = document.getElementById('dayPnl');
+        dayEl.textContent = '¥****';
+        dayEl.className   = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
+        document.getElementById('dayPnlRate').textContent = '相对昨收 **%';
+
+        const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
+        const monthEl = document.getElementById('monthPnl');
+        monthEl.textContent = '¥****';
+        monthEl.className   = `kpi-value ${monthPnl >= 0 ? 'positive' : 'negative'}`;
+        document.getElementById('monthPnlRate').textContent = '本月累计 **%';
+
+        document.getElementById('topWeight').textContent  = '**%';
+        document.getElementById('top3Weight').textContent = '**%';
+      } else if (isSilent) {
+        // 如果是静默更新
         document.getElementById('totalMarket').textContent = moneyFormatter.format(totalMarket);
         
         const pnlEl = document.getElementById('totalPnl');
@@ -1455,7 +1497,8 @@
 
       const date = h[0]?.date || '--';
       document.getElementById('asOf').textContent    = date;
-      document.getElementById('subtitle').textContent =
+      document.getElementById('subtitle').textContent = state.hideValues ?
+        `截至 ${date}，组合总市值 ****，当日盈亏 ****，累计盈亏 ****。` :
         `截至 ${date}，组合总市值 ${moneyFormatter.format(totalMarket)}，当日盈亏 ${moneyFormatter.format(totalDayPnl)}，累计盈亏 ${moneyFormatter.format(totalPnl)}。`;
 
       // 保存本次的值供下次作为起点
@@ -1676,15 +1719,15 @@
             </div>
           </td>
           <td><span class="tag">${x.category}</span></td>
-          <td>${moneyFormatter.format(x.marketValue)}</td>
-          <td>${x.costPrice}</td>
-          <td>${x.currentPrice}</td>
-          <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatPercent(x.dayPnlRate)}</td>
-          <td>${numberFormatter.format(x.quantity)}</td>
-          <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${moneyFormatter.format(x.pnl)}</td>
-          <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
+          <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
+          <td>${state.hideValues ? '****' : (x.costPrice === '-' ? '-' : moneyFormatter.format(toNum(x.costPrice)))}</td>
+          <td>${state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : moneyFormatter.format(toNum(x.currentPrice)))}</td>
+          <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '**%' : formatPercent(x.dayPnlRate)}</td>
+          <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
+          <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
+          <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${state.hideValues ? '**%' : formatPercent(x.pnlRate)}</span></td>
           <td>${formatPercent(x.weight)}</td>
-          <td>${x.change}</td>
+          <td>${state.hideValues ? '**%' : x.change}</td>
         </tr>`).join('');
 
       // 若非静默刷新，执行 GSAP 行错开渐显位移动画
@@ -1934,11 +1977,12 @@
       empty.hidden = true;
       container.innerHTML = list.map(item => {
         const isHK     = item.code.endsWith('.HK');
-        const priceStr = item.current_price != null ? item.current_price.toFixed(3) : '—';
+        const priceStr = state.hideValues ? '****' : (item.current_price != null ? item.current_price.toFixed(3) : '—');
         const dayClass = item.day_pct ? (parseFloat(item.day_pct) >= 0 ? 'positive' : 'negative') : '';
-        const dayStr   = item.day_pct || '—';
+        const dayStr   = state.hideValues ? '**%' : (item.day_pct || '—');
         const totalPctVal = toNum(item.total_pct);
         const compareClass = totalPctVal >= 0 ? 'positive' : 'negative';
+        const compareVal   = state.hideValues ? '**%' : pctBadgeValueOnly(item.total_pct);
         
         return `
           <div class="wl-item ${isHK ? 'hk-row' : ''}" draggable="true" data-code="${item.code}">
@@ -1955,7 +1999,7 @@
             <div class="wl-item-right">
               <div class="wl-price-box">
                 <div class="wl-current-price">${priceStr}</div>
-                <div class="wl-added-compare">比成本 <span class="${compareClass}">${pctBadgeValueOnly(item.total_pct)}</span></div>
+                <div class="wl-added-compare">比成本 <span class="${compareClass}">${compareVal}</span></div>
               </div>
               <div class="wl-pct-badge-wrapper">
                 <span class="wl-pct-badge-pill ${dayClass}">${dayStr}</span>
@@ -2213,6 +2257,22 @@
       }
     }
     window.addEventListener('resize', adjustWatchlistPosition);
+
+    // ── 隐私数值显示与隐藏控制 ────────────────────────────────────
+    document.getElementById('privacyBtn').addEventListener('click', () => {
+      state.hideValues = !state.hideValues;
+      const btn = document.getElementById('privacyBtn');
+      if (state.hideValues) {
+        btn.innerHTML = '🙈 显示数值';
+        btn.title = '显示敏感数值';
+      } else {
+        btn.innerHTML = '👁 隐藏数值';
+        btn.title = '隐藏敏感数值';
+      }
+      // 重绘页面，采用静默刷新避免数字动画闪烁
+      render(true);
+      renderWatchlist(wlList, true);
+    });
 
     // ── 启动 ──────────────────────────────────────────────────
     async function boot() {
