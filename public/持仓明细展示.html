@@ -1762,17 +1762,6 @@
       document.getElementById(id).addEventListener('input', updateMgmtHint)
     );
 
-    // 折叠展开
-    document.getElementById('mgmtToggle').addEventListener('click', () => {
-      const body  = document.getElementById('mgmtBody');
-      const label = document.getElementById('mgmtToggleLabel');
-      const open  = body.classList.toggle('open');
-      label.classList.toggle('open', open);
-      label.querySelector('.arrow').textContent = open ? '▼' : '▶';
-      label.childNodes[1].textContent = open ? '收起' : '展开记录交易';
-      if (open) loadMgmt();
-    });
-
     // 默认日期 = 今天
     document.getElementById('mgmtDate').value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' });
 
@@ -2042,6 +2031,10 @@
             historyChartInstance.resize();
           }, 50);
         }
+        // 如果切到交易记录页，加载/刷新数据
+        if (tabName === 'transactions') {
+          loadMgmt();
+        }
       });
     });
 
@@ -2081,6 +2074,7 @@
           loadLatest(),
           loadHistory(state.historyDays),
           loadWatchlist(),
+          loadMgmt(),
         ]);
       } catch (err) {
         document.getElementById('sourceState').textContent = `加载失败: ${err.message}`;
