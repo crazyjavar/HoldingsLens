@@ -499,13 +499,13 @@
       text-align: left; /* 默认均靠左对齐，解决类型、备注等列的表头表体不对齐问题 */
     }
     .tx-table th { color: var(--muted); background: rgba(15,23,42,0.7); }
-    /* 数字列右对齐：股数(4)、成交价(5)、花费金额(6) */
-    .tx-table th:nth-child(4), .tx-table td:nth-child(4),
+    /* 数字列右对齐：股数(5)、成交价(6)、花费金额(7) */
     .tx-table th:nth-child(5), .tx-table td:nth-child(5),
-    .tx-table th:nth-child(6), .tx-table td:nth-child(6) { text-align: right; }
-    .tx-table td:nth-child(5), .tx-table td:nth-child(6) { font-family: var(--font-tech); }
+    .tx-table th:nth-child(6), .tx-table td:nth-child(6),
+    .tx-table th:nth-child(7), .tx-table td:nth-child(7) { text-align: right; }
+    .tx-table td:nth-child(6), .tx-table td:nth-child(7) { font-family: var(--font-tech); }
     /* 操作列居中对齐 */
-    .tx-table th:nth-child(8), .tx-table td:nth-child(8) { text-align: center; }
+    .tx-table th:nth-child(9), .tx-table td:nth-child(9) { text-align: center; }
     .tx-table .tx-buy  { color: var(--red); }
     .tx-table .tx-sell { color: var(--green); }
     .tx-undo-btn {
@@ -608,7 +608,7 @@
     th { color: var(--muted); background: rgba(15,23,42,0.8); backdrop-filter: blur(6px); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; z-index: 1; }
     th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
     td { font-family: var(--font-main); }
-    td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10) { font-family: var(--font-tech); }
+    td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10), td:nth-child(11) { font-family: var(--font-tech); }
     tbody tr { transition: background-color 0.2s; }
     tbody tr:hover { background: rgba(255,255,255,0.02); }
 
@@ -681,6 +681,11 @@
           <div class="kpi-label">前三集中度</div>
           <div class="kpi-value" id="top3Weight">-</div>
           <div class="kpi-foot">按实际仓位占比计算</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">当月盈亏</div>
+          <div class="kpi-value" id="monthPnl">-</div>
+          <div class="kpi-foot" id="monthPnlRate">本月累计 -</div>
         </div>
       </div>
 
@@ -841,15 +846,16 @@
         <div style="padding: 0 0 6px;">
           <table class="tx-table">
             <thead>
-              <tr>
-                <th>交易日</th>
-                <th>证券</th>
-                <th>类型</th>
-                <th>股数</th>
-                <th>成交价（原货币）</th>
-                <th>花费（元）</th>
-                <th>备注</th>
-                <th>操作</th>
+            <tr>
+              <th>交易日</th>
+              <th>证券</th>
+              <th>今日涨跌</th>
+              <th>类型</th>
+              <th>股数</th>
+              <th>成交价（原货币）</th>
+              <th>花费（元）</th>
+              <th>备注</th>
+              <th>操作</th>
               </tr>
             </thead>
             <tbody id="txTableBody"></tbody>
@@ -888,6 +894,7 @@
               <th>市值</th>
               <th>成本价</th>
               <th>现价</th>
+              <th>今日涨跌</th>
               <th>数量</th>
               <th>累计盈亏</th>
               <th>盈亏比例</th>
@@ -1000,6 +1007,13 @@
       dayEl.textContent = moneyFormatter.format(totalDayPnl);
       dayEl.className   = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
       document.getElementById('dayPnlRate').textContent = `相对昨收 ${formatPercent(totalDayRate)}`;
+
+      const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
+      const monthPnlRate = s ? toNum(s.month_pnl_pct) : 0;
+      const monthEl = document.getElementById('monthPnl');
+      monthEl.textContent = moneyFormatter.format(monthPnl);
+      monthEl.className   = `kpi-value ${monthPnl >= 0 ? 'positive' : 'negative'}`;
+      document.getElementById('monthPnlRate').textContent = `本月累计 ${formatPercent(monthPnlRate)}`;
 
       document.getElementById('topWeight').textContent  = formatPercent(top.weight);
       document.getElementById('topHolding').textContent = top.name;
@@ -1220,6 +1234,7 @@
           <td>${moneyFormatter.format(x.marketValue)}</td>
           <td>${x.costPrice}</td>
           <td>${x.currentPrice}</td>
+          <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatPercent(x.dayPnlRate)}</td>
           <td>${numberFormatter.format(x.quantity)}</td>
           <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${moneyFormatter.format(x.pnl)}</td>
           <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
@@ -1326,9 +1341,20 @@
         const cls     = tx.type === 'buy' ? 'tx-buy' : 'tx-sell';
         const label   = tx.type === 'buy' ? '买入' : '卖出';
         const priceStr = tx.price.toFixed(4);
+        
+        // 查找该股票的今日涨跌
+        const holding = state.holdings.find(h => h.code === tx.code);
+        let dayPnlStr = '—';
+        let dayClass = '';
+        if (holding) {
+          dayPnlStr = formatPercent(holding.dayPnlRate);
+          dayClass = holding.dayPnlRate >= 0 ? 'positive' : 'negative';
+        }
+
         return `<tr>
           <td>${tx.trade_date}</td>
           <td><span class="${cls}">${nameMap[tx.code] || tx.code}</span><br><span style="color:var(--muted);font-size:11px">${tx.code}</span></td>
+          <td class="${dayClass}">${dayPnlStr}</td>
           <td class="${cls}">${label}</td>
           <td>${tx.quantity}</td>
           <td>${priceStr}</td>

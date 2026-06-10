@@ -383,7 +383,43 @@ app.get('/api/holdings/latest', (c) => {
   const summary = db.prepare(
     'SELECT * FROM daily_summary WHERE date = ?'
   ).get(date);
-  return c.json({ date, holdings, summary });
+
+  // ── 计算当月盈亏（本月每日盈亏之和） ────────────────────────
+  const monthPrefix = date.slice(0, 7) + '-%';
+  const monthPnlRow = db.prepare(
+    'SELECT SUM(total_day_pnl) AS month_pnl FROM daily_summary WHERE date LIKE ?'
+  ).get(monthPrefix);
+  const monthPnl = monthPnlRow ? (monthPnlRow['month_pnl'] ?? 0) : 0;
+
+  // 计算当月期初资产（即上个月最后一天的总市值）
+  const firstDayOfMonth = date.slice(0, 7) + '-01';
+  const prevMonthLastDay = db.prepare(
+    'SELECT total_market FROM daily_summary WHERE date < ? ORDER BY date DESC LIMIT 1'
+  ).get(firstDayOfMonth);
+
+  let startMarket = 0;
+  if (prevMonthLastDay && prevMonthLastDay['total_market'] > 0) {
+    startMarket = prevMonthLastDay['total_market'];
+  } else {
+    // 若无上月数据，则取本月第一天的市值和当日盈亏倒推期初资产
+    const thisMonthFirstDay = db.prepare(
+      'SELECT total_market, total_day_pnl FROM daily_summary WHERE date LIKE ? ORDER BY date ASC LIMIT 1'
+    ).get(monthPrefix);
+    if (thisMonthFirstDay) {
+      startMarket = (thisMonthFirstDay['total_market'] || 0) - (thisMonthFirstDay['total_day_pnl'] || 0);
+    }
+  }
+
+  const monthPnlRateVal = startMarket > 0 ? (monthPnl / startMarket * 100) : 0;
+  const monthPnlRate = monthPnlRateVal.toFixed(2) + '%';
+
+  const extendedSummary = summary ? {
+    ...summary,
+    month_pnl: Math.round(monthPnl * 100) / 100,
+    month_pnl_pct: monthPnlRate
+  } : null;
+
+  return c.json({ date, holdings, summary: extendedSummary });
 });
 
 /** GET /api/holdings/history?days=30 — 过去 N 天每日汇总（用于趋势图）*/
