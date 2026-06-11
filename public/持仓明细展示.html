@@ -159,14 +159,14 @@
 
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 14px;
       align-content: start;
     }
 
     .kpi {
-      min-height: 118px;
-      padding: 18px;
+      min-height: 102px;
+      padding: 14px 16px;
       border-radius: 8px;
       border: 1px solid var(--line);
       background: var(--panel);
@@ -180,9 +180,9 @@
       border-color: var(--cyan);
     }
 
-    .kpi-label { color: var(--muted); font-size: 13px; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi-label { color: var(--muted); font-size: 13px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
     .kpi-value { color: var(--ink); font-family: var(--font-tech); font-size: clamp(20px, 2.6vw, 32px); line-height: 1.05; font-weight: 700; white-space: nowrap; }
-    .kpi-foot { margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .kpi-foot { margin-top: 6px; color: var(--muted); font-size: 12px; }
 
     .summary-value.negative, .bar-value.negative, td.negative { color: var(--green); text-shadow: 0 0 8px rgba(16,185,129,0.2); }
     .summary-value.positive, .bar-value.positive, td.positive { color: var(--red); text-shadow: 0 0 8px rgba(244,63,94,0.2); }
@@ -746,6 +746,41 @@
       opacity: 0.9;
     }
 
+    /* 下拉候选联想框 */
+    .wl-suggest-box {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: rgba(10, 15, 30, 0.98);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      max-height: 180px;
+      overflow-y: auto;
+      z-index: 120;
+    }
+    .wl-suggest-item {
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.2s, color 0.2s;
+      color: var(--text);
+    }
+    .wl-suggest-item:hover {
+      background: rgba(0, 240, 255, 0.15);
+      color: var(--cyan);
+    }
+    .wl-suggest-item .s-code {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
     /* 自选股 Flex 列表 */
     .wl-list {
       flex: 1;
@@ -1276,7 +1311,10 @@
         <!-- 折叠的自选股添加表单 -->
         <div class="wl-add-panel" id="wlAddPanel" style="display:none;">
           <div class="wl-add-form-vertical">
-            <input id="wlCode" class="wl-input code" type="text" placeholder="代码 如 000858 / 09626.HK" maxlength="12">
+            <div style="position: relative; width: 100%;">
+              <input id="wlCode" class="wl-input code" type="text" placeholder="代码/公司名（如 五粮液 或 000858）" maxlength="30" autocomplete="off">
+              <div class="wl-suggest-box" id="wlSuggestBox" style="display:none;"></div>
+            </div>
             <input id="wlName" class="wl-input name" type="text" placeholder="名称（可选，自动获取）">
             <input id="wlNote" class="wl-input note" type="text" placeholder="备注（可空）" maxlength="30">
             <button id="wlAddBtn" class="wl-btn" type="button">➕ 确认添加</button>
@@ -2087,40 +2125,65 @@
     }
 
     document.getElementById('wlAddBtn').addEventListener('click', async () => {
-      const raw  = document.getElementById('wlCode').value.trim().toUpperCase();
-      const code = normalizeCode(raw);
-      const name = document.getElementById('wlName').value.trim();
+      const raw  = document.getElementById('wlCode').value.trim();
+      const nameInput = document.getElementById('wlName').value.trim();
       const note = document.getElementById('wlNote').value.trim();
       const errEl = document.getElementById('wlError');
       const btn   = document.getElementById('wlAddBtn');
       errEl.textContent = '';
-      if (!raw) { errEl.textContent = '请输入证券代码（如 000858 或 09626.HK）'; return; }
+      if (!raw) { errEl.textContent = '请输入证券代码或公司名称'; return; }
+      
+      btn.disabled = true;
+      btn.textContent = '智能匹配中...';
+      
+      let code = normalizeCode(raw.toUpperCase());
+      let finalName = nameInput;
+
+      // 若不能解析为常规格式，说明用户输入的是公司名称或拼音，在此通过接口模糊检索
       if (!code) {
-        errEl.textContent = '无法识别代码格式：A股请输6位数字，港股请输5位数字或带 .HK 后缀';
+        try {
+          const resp = await fetch(`/api/stocks/search?q=${encodeURIComponent(raw)}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.list && data.list.length > 0) {
+              code = data.list[0].code;
+              finalName = finalName || data.list[0].name;
+              document.getElementById('wlCode').value = code;
+              document.getElementById('wlName').value = finalName;
+            }
+          }
+        } catch (e) {
+          console.error('Submit suggest error:', e);
+        }
+      }
+
+      if (!code) {
+        errEl.textContent = '无法匹配到对应股票：A股请输6位数字或中文名称，港股请输5位数字或中文名称';
+        btn.disabled = false;
+        btn.textContent = '➕ 确认添加';
         return;
       }
-      // 自动回填规范化后的代码，让用户知道实际提交的是什么
-      document.getElementById('wlCode').value = code;
-      btn.disabled = true;
+
       btn.textContent = '添加中...';
       try {
         const resp = await fetch('/api/watchlist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, name, note }),
+          body: JSON.stringify({ code, name: finalName, note }),
         });
         const data = await resp.json();
-        if (!resp.ok) { errEl.textContent = data.error || '添加失败'; return; }
+        if (!resp.ok) { errEl.textContent = data.error || '添加失败'; btn.disabled = false; btn.textContent = '➕ 确认添加'; return; }
         document.getElementById('wlCode').value = '';
         document.getElementById('wlName').value = '';
         document.getElementById('wlNote').value = '';
+        const suggestBox = document.getElementById('wlSuggestBox');
+        if (suggestBox) suggestBox.style.display = 'none';
         await loadWatchlist(false);
       } catch (e) {
         errEl.textContent = '网络错误，请稍后重试';
       } finally {
         btn.disabled = false;
         btn.textContent = '➕ 确认添加';
-        // 自动折叠面板
         toggleWlAddPanel(false);
       }
     });
@@ -2145,6 +2208,11 @@
         }
       } else {
         btn.textContent = '＋';
+        const suggestBox = document.getElementById('wlSuggestBox');
+        if (suggestBox) {
+          suggestBox.innerHTML = '';
+          suggestBox.style.display = 'none';
+        }
         if (typeof gsap !== 'undefined') {
           gsap.to(panel, {
             height: 0,
@@ -2159,6 +2227,75 @@
           panel.style.display = 'none';
         }
       }
+    }
+
+    // ── 自选股代码联想搜索 ─────────────────────────────────────────
+    let wlSuggestTimer = null;
+    const wlCodeInput = document.getElementById('wlCode');
+    const wlSuggestBox = document.getElementById('wlSuggestBox');
+
+    if (wlCodeInput && wlSuggestBox) {
+      wlCodeInput.addEventListener('input', () => {
+        const val = wlCodeInput.value.trim();
+        if (wlSuggestTimer) clearTimeout(wlSuggestTimer);
+
+        if (!val) {
+          wlSuggestBox.innerHTML = '';
+          wlSuggestBox.style.display = 'none';
+          return;
+        }
+
+        wlSuggestTimer = setTimeout(async () => {
+          try {
+            const resp = await fetch(`/api/stocks/search?q=${encodeURIComponent(val)}`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const list = data.list || [];
+
+            if (list.length === 0) {
+              wlSuggestBox.innerHTML = '';
+              wlSuggestBox.style.display = 'none';
+              return;
+            }
+
+            wlSuggestBox.innerHTML = list.map(item => `
+              <div class="wl-suggest-item" data-code="${item.code}" data-name="${item.name}">
+                <strong>${item.name}</strong>
+                <span class="s-code">${item.code}</span>
+              </div>
+            `).join('');
+            wlSuggestBox.style.display = 'block';
+          } catch (e) {
+            console.error('Suggest fetch error:', e);
+          }
+        }, 150);
+      });
+
+      // 绑定点击列表项选择事件（采用事件委托）
+      wlSuggestBox.addEventListener('click', e => {
+        const item = e.target.closest('.wl-suggest-item');
+        if (!item) return;
+        
+        const code = item.dataset.code;
+        const name = item.dataset.name;
+
+        wlCodeInput.value = code;
+        document.getElementById('wlName').value = name;
+        
+        wlSuggestBox.innerHTML = '';
+        wlSuggestBox.style.display = 'none';
+        
+        // 自动聚焦下一个输入框（Note 输入框）
+        const noteEl = document.getElementById('wlNote');
+        if (noteEl) noteEl.focus();
+      });
+
+      // 点击页面其他位置自动隐藏联想提示框
+      document.addEventListener('click', e => {
+        if (!e.target.closest('#wlCode') && !e.target.closest('#wlSuggestBox')) {
+          wlSuggestBox.style.display = 'none';
+        }
+      });
     }
 
     /**

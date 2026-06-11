@@ -605,6 +605,58 @@ app.delete('/api/transactions/:id', (c) => {
 
 // ── 自选股 API ────────────────────────────────────────────
 
+/** GET /api/stocks/search?q=... — 股票拼音/代码/中文智能联想搜索 */
+app.get('/api/stocks/search', async (c) => {
+  const q = c.req.query('q') || '';
+  if (!q.trim()) return c.json({ list: [] });
+
+  try {
+    const resp = await fetch(`https://suggest3.sinajs.cn/suggest/key=${encodeURIComponent(q)}`);
+    if (!resp.ok) return c.json({ list: [] });
+
+    // 新浪接口返回的是 GBK 编码，使用 TextDecoder('gbk') 原生解码
+    const arrayBuffer = await resp.arrayBuffer();
+    const text = new TextDecoder('gbk').decode(arrayBuffer);
+    
+    const match = text.match(/var suggestvalue="([^"]*)"/);
+    if (!match) return c.json({ list: [] });
+
+    const items = match[1].split(';').filter(Boolean);
+    const list = items.map(item => {
+      const parts = item.split(',');
+      if (parts.length < 5) return null;
+      
+      const type = parts[1];
+      const fullCode = parts[3].toLowerCase();
+      const name = parts[4];
+      
+      let normCode = '';
+      if (type === '11') { // A股
+        if (fullCode.startsWith('sz')) {
+          normCode = fullCode.slice(2).toUpperCase() + '.SZ';
+        } else if (fullCode.startsWith('sh')) {
+          normCode = fullCode.slice(2).toUpperCase() + '.SH';
+        }
+      } else if (type === '31') { // 港股
+        let rawNum = fullCode.startsWith('hk') ? fullCode.slice(2) : parts[2];
+        if (rawNum.length === 4) {
+          rawNum = '0' + rawNum;
+        }
+        normCode = rawNum.toUpperCase() + '.HK';
+      } else {
+        return null;
+      }
+      
+      return { code: normCode, name };
+    }).filter(Boolean);
+
+    return c.json({ list });
+  } catch (err) {
+    console.error('Search stock error:', err);
+    return c.json({ list: [] });
+  }
+});
+
 /** GET /api/watchlist — 获取全部自选股 + 最新价格快照 */
 app.get('/api/watchlist', (c) => {
   const items = db.prepare('SELECT * FROM watchlist ORDER BY sort_order ASC, created_at ASC').all();
