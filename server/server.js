@@ -657,6 +657,70 @@ app.get('/api/stocks/search', async (c) => {
   }
 });
 
+/** GET /api/indices — 获取大盘指数行情（上证、深证、创业板、恒生科技） */
+app.get('/api/indices', async (c) => {
+  const symbols = [
+    'sh000001', 'sz399001', 'sz399006', 
+    'hkHSI', 'hkHSTECH', 'sh518880', 
+    'sh000510', 'sh000852', 'sh000688', 'bj899050'
+  ];
+  try {
+    const url = `https://qt.gtimg.cn/q=${symbols.join(',')}`;
+    const resp = await fetch(url, {
+      headers: {
+        Referer: 'https://gu.qq.com/',
+        'User-Agent': 'Mozilla/5.0',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) return c.json({ indices: [] });
+
+    const buf = await resp.arrayBuffer();
+    const body = new TextDecoder('gbk').decode(buf);
+
+    const result = [];
+    for (const entry of body.split(';')) {
+      const e = entry.trim();
+      if (!e || !e.includes('="')) continue;
+      const eqIdx = e.indexOf('="');
+      const left = e.slice(0, eqIdx);
+      const right = e.slice(eqIdx + 2).replace(/";?\s*$/, '');
+      const symbol = left.split('_').pop();
+      const fields = right.split('~');
+      if (fields.length <= 32) continue;
+
+      let name = fields[1].trim();
+      if (symbol === 'sh518880') {
+        name = '黄金基金';
+      } else if (symbol === 'sh000510') {
+        name = '中证A500';
+      } else if (symbol === 'sh000852') {
+        name = '中证1000';
+      } else if (symbol === 'sh000688') {
+        name = '科创50';
+      } else if (symbol === 'bj899050') {
+        name = '北证50';
+      }
+      const current = parseFloat(fields[3]) || 0;
+      const changeVal = parseFloat(fields[31]) || 0;
+      const changePct = parseFloat(fields[32]) || 0;
+
+      result.push({
+        symbol,
+        name,
+        current,
+        changeVal,
+        changePct,
+      });
+    }
+
+    return c.json({ indices: result });
+  } catch (err) {
+    console.error('Fetch indices error:', err);
+    return c.json({ indices: [] });
+  }
+});
+
 /** GET /api/watchlist — 获取全部自选股 + 最新价格快照 */
 app.get('/api/watchlist', (c) => {
   const items = db.prepare('SELECT * FROM watchlist ORDER BY sort_order ASC, created_at ASC').all();

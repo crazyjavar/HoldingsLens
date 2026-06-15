@@ -1031,6 +1031,78 @@
       .controls, .search, .select, .segmented { width: 100%; }
       .segmented button { padding: 0 8px; }
     }
+
+    /* ── 大盘指数栏 ──────────────────── */
+    .index-bar {
+      display: flex;
+      overflow-x: auto;
+      gap: 14px;
+      margin-bottom: 18px;
+      padding-bottom: 4px;
+      scrollbar-width: none; /* Firefox 隐藏滚动条 */
+      -webkit-overflow-scrolling: touch; /* iOS 惯性滑动 */
+    }
+    .index-bar::-webkit-scrollbar {
+      display: none; /* Chrome/Safari 隐藏滚动条 */
+    }
+    .index-card {
+      flex: 1 0 170px; /* PC宽屏下均分平铺，空间不足时保持 170px 宽度以防挤压并触发横向滑动 */
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+      cursor: default;
+    }
+    .index-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.12);
+      border-color: var(--cyan);
+    }
+    .index-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .index-name {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .index-value {
+      font-family: var(--font-tech);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1.1;
+    }
+    .index-change-row {
+      display: flex;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .index-change-row.negative { color: var(--green); text-shadow: 0 0 8px rgba(16,185,129,0.2); }
+    .index-change-row.positive { color: var(--red); text-shadow: 0 0 8px rgba(244,63,94,0.2); }
+    .index-change-row.flat { color: var(--muted); }
+
+    /* 移动端横向滚动适配 */
+    @media (max-width: 900px) {
+      .index-bar {
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .index-card {
+        flex: 0 0 160px; /* 移动端卡片缩窄，适合触控滑行 */
+      }
+    }
   </style>
 </head>
 <body>
@@ -1062,6 +1134,9 @@
 
       <!-- Tab 1: 概览 (Overview) -->
       <div class="tab-content active" id="tab-overview">
+        <!-- 大盘指数栏 -->
+        <div class="index-bar" id="indexBar"></div>
+
         <!-- KPI + 效果面板 -->
         <section class="top-row-grid" aria-label="核心指标">
           <div class="kpi-grid">
@@ -1400,6 +1475,47 @@
     };
 
     // ── 数据加载 ─────────────────────────────────────────────
+    // ── 加载并渲染大盘指数 ───────────────────────────────────────
+    async function loadIndices() {
+      const indexBar = document.getElementById('indexBar');
+      if (!indexBar) return;
+      try {
+        const resp = await fetch('/api/indices');
+        if (!resp.ok) throw new Error(`API ${resp.status}`);
+        const data = await resp.json();
+        const indices = data.indices || [];
+        if (indices.length === 0) {
+          indexBar.innerHTML = '';
+          return;
+        }
+        indexBar.innerHTML = indices.map(idx => {
+          const isUp = idx.changeVal > 0;
+          const isDown = idx.changeVal < 0;
+          const sign = isUp ? '+' : '';
+          const changeClass = isUp ? 'positive' : (isDown ? 'negative' : 'flat');
+          // 精准保留两位小数
+          const currentStr = idx.current.toFixed(2);
+          const valStr = idx.changeVal.toFixed(2);
+          const pctStr = idx.changePct.toFixed(2);
+          
+          return `
+            <div class="index-card">
+              <div class="index-card-header">
+                <span class="index-name">${idx.name}</span>
+              </div>
+              <div class="index-value">${currentStr}</div>
+              <div class="index-change-row ${changeClass}">
+                <span>${sign}${valStr}</span>
+                <span>${sign}${pctStr}%</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Failed to load indices:', err);
+      }
+    }
+
     async function loadLatest(isSilent = false) {
       const resp = await fetch('/api/holdings/latest');
       if (!resp.ok) throw new Error(`API ${resp.status}`);
@@ -1820,8 +1936,11 @@
       refreshBtn.textContent = '⟳ 刷新中...';
       try {
         await fetch('/api/holdings/refresh', { method: 'POST' });
-        await loadLatest();
-        await loadHistory(state.historyDays);
+        await Promise.all([
+          loadLatest(),
+          loadHistory(state.historyDays),
+          loadIndices()
+        ]);
       } finally {
         refreshBtn.classList.remove('loading');
         refreshBtn.textContent = '⟳ 立即刷新';
@@ -2420,6 +2539,7 @@
           loadHistory(state.historyDays),
           loadWatchlist(false),
           loadMgmt(),
+          loadIndices(),
         ]);
       } catch (err) {
         document.getElementById('sourceState').textContent = `加载失败: ${err.message}`;
@@ -2436,6 +2556,7 @@
           loadLatest(true),
           loadHistory(state.historyDays),
           loadWatchlist(true),
+          loadIndices(),
         ]);
       } catch (_) {}
     }, 60 * 1000);
