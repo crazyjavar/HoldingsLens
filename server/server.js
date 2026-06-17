@@ -170,6 +170,14 @@ let lastRefreshTime = null;
 let refreshLock = false;
 
 export async function refreshHoldings() {
+  // 增加周末过滤防御，防止生成周末静止的历史数据行
+  const bj = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  const day = bj.getDay(); // 0=周日, 6=周六
+  if (day === 0 || day === 6) {
+    console.log('[refresh] 周末不开盘，跳过行情抓取及写入');
+    return { skipped: true, reason: 'weekend' };
+  }
+
   if (refreshLock) {
     console.log('[refresh] 上一次抓取仍在进行，跳过');
     return { skipped: true };
