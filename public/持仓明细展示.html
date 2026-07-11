@@ -217,6 +217,50 @@
       background: transparent;
     }
 
+    .effect-header-actions { display: flex; align-items: center; gap: 8px; }
+    .effect-switch {
+      display: inline-flex;
+      padding: 2px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(15,23,42,0.72);
+    }
+    .effect-switch[hidden] { display: none; }
+    .effect-switch button {
+      border: 0;
+      border-radius: 5px;
+      padding: 4px 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .effect-switch button.active {
+      background: rgba(0,240,255,0.12);
+      color: var(--cyan);
+      box-shadow: inset 0 0 0 1px rgba(0,240,255,0.2);
+    }
+
+    .weekly-report {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: radial-gradient(circle at 50% 10%, rgba(0,240,255,0.12), transparent 65%);
+    }
+    .weekly-report[hidden] { display: none; }
+    .weekly-report-label { color: var(--muted); font-size: 11px; letter-spacing: 1.5px; }
+    .weekly-report-value { margin-top: 6px; font: 700 29px/1 var(--font-tech); }
+    .weekly-report-rate { margin-top: 7px; font: 600 13px/1 var(--font-tech); }
+    .weekly-report.positive .weekly-report-value,
+    .weekly-report.positive .weekly-report-rate { color: var(--red); text-shadow: 0 0 12px rgba(244,63,94,0.28); }
+    .weekly-report.negative .weekly-report-value,
+    .weekly-report.negative .weekly-report-rate { color: var(--green); text-shadow: 0 0 12px rgba(16,185,129,0.28); }
+
     /* 得意小人图片 */
     .winning-img {
       width: 100%;
@@ -1165,7 +1209,13 @@
           <article class="panel effect-panel">
             <div class="panel-header">
               <h2 class="panel-title" id="effectTitle">AI 助理状态</h2>
-              <div class="panel-note" id="effectNote">实时演算</div>
+              <div class="effect-header-actions">
+                <div class="effect-switch" id="effectSwitch" hidden aria-label="切换当日状态和本周战报">
+                  <button type="button" data-effect-mode="daily">日状态</button>
+                  <button type="button" data-effect-mode="weekly">周战报</button>
+                </div>
+                <div class="panel-note" id="effectNote">实时演算</div>
+              </div>
             </div>
             <div class="panel-body effect-body">
               <div class="effect-stage" id="effectStage">
@@ -1180,6 +1230,11 @@
                     </div>
                     <div class="paws"><span></span><span></span></div>
                   </div>
+                </div>
+                <div class="weekly-report" id="weeklyReport" hidden>
+                  <div class="weekly-report-label">本周累计盈亏</div>
+                  <div class="weekly-report-value" id="weeklyReportValue">-</div>
+                  <div class="weekly-report-rate" id="weeklyReportRate">-</div>
                 </div>
               </div>
               <div class="effect-bubble" id="effectBubble">数据读取中...</div>
@@ -1469,6 +1524,8 @@
       sort: 'weight-desc',
       historyDays: 30,
       hideValues: false,
+      effectMode: 'daily',
+      weekModeInitialized: false,
       prevValues: {
         totalMarket: 0,
         totalPnl: 0,
@@ -1677,7 +1734,7 @@
         top3Weight: top3
       };
 
-      renderEffect(totalRate, totalDayPnl);
+      renderEffect(totalRate, totalDayPnl, s);
     }
 
     // ── AI 助理效果 ───────────────────────────────────────────
@@ -1699,18 +1756,62 @@
     let canvasAnimationId = null;
     let textBubbleInterval = null;
 
-    function renderEffect(totalRate, dayPnl) {
+    function animateEffectSwitch() {
+      if (typeof gsap === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      gsap.fromTo(
+        ['#effectStage', '#effectBubble'],
+        { autoAlpha: 0, y: 8 },
+        { autoAlpha: 1, y: 0, duration: 0.35, stagger: 0.06, ease: 'power2.out', overwrite: 'auto', clearProps: 'all' }
+      );
+    }
+
+    function renderEffect(totalRate, dayPnl, summary) {
       const isWinning = dayPnl >= 0;
       const titleEl   = document.getElementById('effectTitle');
       const noteEl    = document.getElementById('effectNote');
       const bubbleEl  = document.getElementById('effectBubble');
       const animalEl  = document.getElementById('cuteAnimalContainer');
       const winningImg = document.getElementById('winningImg');
+      const switchEl = document.getElementById('effectSwitch');
+      const weeklyEl = document.getElementById('weeklyReport');
+      const weekReady = Boolean(summary?.week_report_ready);
+
+      switchEl.hidden = !weekReady;
+      if (weekReady && !state.weekModeInitialized) {
+        state.effectMode = 'weekly';
+        state.weekModeInitialized = true;
+      } else if (!weekReady) {
+        state.effectMode = 'daily';
+        state.weekModeInitialized = false;
+      }
+      switchEl.querySelectorAll('button').forEach(button => {
+        button.classList.toggle('active', button.dataset.effectMode === state.effectMode);
+      });
 
       if (textBubbleInterval) clearInterval(textBubbleInterval);
       if (canvasAnimationId)  cancelAnimationFrame(canvasAnimationId);
 
       const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+      if (state.effectMode === 'weekly' && weekReady) {
+        const weekPnl = Number(summary.week_pnl) || 0;
+        const weekRate = toNum(summary.week_pnl_pct);
+        const weekWinning = weekPnl >= 0;
+        titleEl.textContent = weekWinning ? '本周战报：红盘收官' : '本周战报：逆风复盘';
+        noteEl.textContent = `${summary.week_start.slice(5)} — ${summary.week_end.slice(5)}`;
+        animalEl.classList.add('hidden');
+        winningImg.style.display = 'none';
+        weeklyEl.hidden = false;
+        weeklyEl.className = `weekly-report ${weekWinning ? 'positive' : 'negative'}`;
+        document.getElementById('weeklyReportValue').textContent = state.hideValues ? '¥****' : moneyFormatter.format(weekPnl);
+        document.getElementById('weeklyReportRate').textContent = `本周收益 ${formatPercent(weekRate)}`;
+        bubbleEl.textContent = weekWinning
+          ? `本周累计盈利 ${state.hideValues ? '****' : moneyFormatter.format(weekPnl)}，周末好好奖励一下自己。`
+          : `本周累计回撤 ${state.hideValues ? '****' : moneyFormatter.format(Math.abs(weekPnl))}，周末复盘，下周再战。`;
+        return;
+      }
+
+      weeklyEl.hidden = true;
 
       if (isWinning) {
         titleEl.textContent = '势能：雄霸天下';
@@ -1728,6 +1829,15 @@
         textBubbleInterval = setInterval(() => { bubbleEl.textContent = pick(cutePhrases); }, 4000);
       }
     }
+
+    document.getElementById('effectSwitch').addEventListener('click', event => {
+      const button = event.target.closest('[data-effect-mode]');
+      if (!button) return;
+      state.effectMode = button.dataset.effectMode;
+      const s = state.summary;
+      renderEffect(s ? toNum(s.total_pnl_pct) : 0, s ? s.total_day_pnl : 0, s);
+      animateEffectSwitch();
+    });
 
 
     // ── 仓位结构渲染 ──────────────────────────────────────────

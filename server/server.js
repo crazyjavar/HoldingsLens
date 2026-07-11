@@ -510,10 +510,51 @@ app.get('/api/holdings/latest', (c) => {
   const monthPnlRateVal = startMarket > 0 ? (monthPnl / startMarket * 100) : 0;
   const monthPnlRate = monthPnlRateVal.toFixed(2) + '%';
 
+  // ── 计算最新数据所在自然周的盈亏（周一至最新交易日）──
+  const latestDay = new Date(`${date}T00:00:00Z`);
+  const latestWeekday = latestDay.getUTCDay();
+  const daysFromMonday = latestWeekday === 0 ? 6 : latestWeekday - 1;
+  const weekStartDate = new Date(latestDay);
+  weekStartDate.setUTCDate(latestDay.getUTCDate() - daysFromMonday);
+  const weekStart = weekStartDate.toISOString().slice(0, 10);
+
+  const weekPnlRow = db.prepare(`
+    SELECT SUM(total_day_pnl) AS week_pnl
+    FROM daily_summary
+    WHERE date BETWEEN ? AND ?
+  `).get(weekStart, date);
+  const weekPnl = weekPnlRow?.['week_pnl'] ?? 0;
+  const prevWeekMarket = db.prepare(
+    'SELECT total_market FROM daily_summary WHERE date < ? ORDER BY date DESC LIMIT 1'
+  ).get(weekStart);
+  const firstWeekDay = db.prepare(`
+    SELECT total_market, total_day_pnl
+    FROM daily_summary
+    WHERE date BETWEEN ? AND ?
+    ORDER BY date ASC LIMIT 1
+  `).get(weekStart, date);
+  const weekStartMarket = prevWeekMarket?.['total_market'] > 0
+    ? prevWeekMarket['total_market']
+    : Math.max(0, (firstWeekDay?.['total_market'] || 0) - (firstWeekDay?.['total_day_pnl'] || 0));
+  const weekPnlRate = weekStartMarket > 0 ? `${(weekPnl / weekStartMarket * 100).toFixed(2)}%` : '0.00%';
+
+  // 周战报只在当周周五收盘后及紧随的周末开放，避免旧数据误触发。
+  const nowBj = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  const todayBj = new Date(Date.UTC(nowBj.getFullYear(), nowBj.getMonth(), nowBj.getDate()));
+  const daysSinceLatest = Math.round((todayBj.getTime() - latestDay.getTime()) / 86400000);
+  const afterFridayClose = nowBj.getHours() * 60 + nowBj.getMinutes() >= 15 * 60 + 5;
+  const weekReportReady = latestWeekday === 5 && daysSinceLatest >= 0 && daysSinceLatest <= 2
+    && (daysSinceLatest > 0 || afterFridayClose);
+
   const extendedSummary = summary ? {
     ...summary,
     month_pnl: Math.round(monthPnl * 100) / 100,
-    month_pnl_pct: monthPnlRate
+    month_pnl_pct: monthPnlRate,
+    week_pnl: Math.round(weekPnl * 100) / 100,
+    week_pnl_pct: weekPnlRate,
+    week_start: weekStart,
+    week_end: date,
+    week_report_ready: weekReportReady,
   } : null;
 
   return c.json({ date, holdings, summary: extendedSummary });
