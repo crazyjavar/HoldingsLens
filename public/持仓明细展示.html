@@ -1407,6 +1407,7 @@
     // ── 格式化工具 ─────────────────────────────────────────
     const numberFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 });
     const moneyFormatter  = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 });
+    const priceFormatter  = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
     function formatPercent(value) {
       return `${Number(value).toFixed(2)}%`;
@@ -1415,6 +1416,13 @@
     function toNum(str) {
       if (!str || str === '-') return 0;
       return parseFloat(String(str).replace(/[%,]/g, '')) || 0;
+    }
+
+    // 所有写入 innerHTML 的外部数据必须先转义，同时适用于文本和引号包裹的属性值。
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      })[char]);
     }
 
     function classify(name, code) {
@@ -1501,7 +1509,7 @@
           return `
             <div class="index-card">
               <div class="index-card-header">
-                <span class="index-name">${idx.name}</span>
+                <span class="index-name">${escapeHtml(idx.name)}</span>
               </div>
               <div class="index-value">${currentStr}</div>
               <div class="index-change-row ${changeClass}">
@@ -1729,7 +1737,7 @@
         .sort((a, b) => b.weight - a.weight)
         .map(x => `
           <div class="bar-row">
-            <div class="bar-name" title="${x.name}">${x.name}</div>
+            <div class="bar-name" title="${escapeHtml(x.name)}">${escapeHtml(x.name)}</div>
             <div class="track"><div class="fill" style="width:${(x.weight / max * 100).toFixed(2)}%"></div></div>
             <div class="bar-value">${formatPercent(x.weight)}</div>
           </div>`).join('');
@@ -1742,7 +1750,7 @@
         .sort((a, b) => a.pnl - b.pnl)
         .map(x => `
           <div class="bar-row">
-            <div class="bar-name" title="${x.name}">${x.name}</div>
+            <div class="bar-name" title="${escapeHtml(x.name)}">${escapeHtml(x.name)}</div>
             <div class="track"><div class="fill ${x.pnl >= 0 ? 'gain' : 'loss'}" style="width:${(Math.abs(x.pnl) / maxAbs * 100).toFixed(2)}%"></div></div>
             <div class="bar-value ${x.pnl >= 0 ? 'positive' : 'negative'}">${moneyFormatter.format(x.pnl)}</div>
           </div>`).join('');
@@ -1869,20 +1877,20 @@
         <tr>
           <td>
             <div class="name-cell">
-              <strong>${x.name}</strong>
-              <span class="code">${x.code}</span>
+              <strong>${escapeHtml(x.name)}</strong>
+              <span class="code">${escapeHtml(x.code)}</span>
             </div>
           </td>
-          <td><span class="tag">${x.category}</span></td>
+          <td><span class="tag">${escapeHtml(x.category)}</span></td>
           <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
-          <td>${state.hideValues ? '****' : (x.costPrice === '-' ? '-' : moneyFormatter.format(toNum(x.costPrice)))}</td>
-          <td>${state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : moneyFormatter.format(toNum(x.currentPrice)))}</td>
+          <td>${state.hideValues ? '****' : (x.costPrice === '-' ? '-' : priceFormatter.format(toNum(x.costPrice)))}</td>
+          <td>${state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : priceFormatter.format(toNum(x.currentPrice)))}</td>
           <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatPercent(x.dayPnlRate)}</td>
           <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
           <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
           <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
           <td>${formatPercent(x.weight)}</td>
-          <td>${x.change}</td>
+          <td>${escapeHtml(x.change)}</td>
         </tr>`).join('');
 
       // 若非静默刷新，执行 GSAP 行错开渐显位移动画
@@ -1963,7 +1971,7 @@
       const cur = sel.value;
       sel.innerHTML = '<option value="">请选择持仓股票</option>' +
         mgmtHoldingsList.map(h =>
-          `<option value="${h.code}">${h.name}  ${h.code}</option>`
+          `<option value="${escapeHtml(h.code)}">${escapeHtml(h.name)}  ${escapeHtml(h.code)}</option>`
         ).join('');
       if (cur) sel.value = cur;
 
@@ -2006,14 +2014,14 @@
         }
 
         return `<tr>
-          <td>${tx.trade_date}</td>
-          <td><span class="${cls}">${nameMap[tx.code] || tx.code}</span><br><span style="color:var(--muted);font-size:11px">${tx.code}</span></td>
+          <td>${escapeHtml(tx.trade_date)}</td>
+          <td><span class="${cls}">${escapeHtml(nameMap[tx.code] || tx.code)}</span><br><span style="color:var(--muted);font-size:11px">${escapeHtml(tx.code)}</span></td>
           <td class="${dayClass}">${dayPnlStr}</td>
           <td class="${cls}">${label}</td>
           <td>${tx.quantity}</td>
           <td>${priceStr}</td>
           <td>¥${tx.amount_cny.toFixed(2)}</td>
-          <td style="color:var(--muted)">${tx.note || '—'}</td>
+          <td style="color:var(--muted)">${escapeHtml(tx.note || '—')}</td>
           <td><button class="tx-undo-btn" data-id="${tx.id}" onclick="undoTx(this)">撤销</button></td>
         </tr>`;
       }).join('');
@@ -2142,15 +2150,15 @@
         const compareClass = totalPctVal >= 0 ? 'positive' : 'negative';
         
         return `
-          <div class="wl-item ${isHK ? 'hk-row' : ''}" draggable="true" data-code="${item.code}">
+          <div class="wl-item ${isHK ? 'hk-row' : ''}" draggable="true" data-code="${escapeHtml(item.code)}">
             <div class="wl-item-left">
               <span class="wl-drag-handle" title="拖拽排序">⠿</span>
               <div class="wl-name-box">
                 <div class="wl-title-row">
-                  <strong class="wl-name">${item.name}</strong>
+                  <strong class="wl-name">${escapeHtml(item.name)}</strong>
                   ${marketBadge(item.code)}
                 </div>
-                <span class="wl-code-sub">${item.code} ${item.note ? '• ' + item.note : ''}</span>
+                <span class="wl-code-sub">${escapeHtml(item.code)} ${item.note ? '• ' + escapeHtml(item.note) : ''}</span>
               </div>
             </div>
             <div class="wl-item-right">
@@ -2160,7 +2168,7 @@
               </div>
               <div class="wl-pct-badge-wrapper">
                 <span class="wl-pct-badge-pill ${dayClass}">${dayStr}</span>
-                <button class="wl-item-delete" data-code="${item.code}" onclick="deleteWatchitem(this)" title="删除">×</button>
+                <button class="wl-item-delete" data-code="${escapeHtml(item.code)}" onclick="deleteWatchitem(this)" title="删除">×</button>
               </div>
             </div>
           </div>`;
@@ -2378,9 +2386,9 @@
             }
 
             wlSuggestBox.innerHTML = list.map(item => `
-              <div class="wl-suggest-item" data-code="${item.code}" data-name="${item.name}">
-                <strong>${item.name}</strong>
-                <span class="s-code">${item.code}</span>
+              <div class="wl-suggest-item" data-code="${escapeHtml(item.code)}" data-name="${escapeHtml(item.name)}">
+                <strong>${escapeHtml(item.name)}</strong>
+                <span class="s-code">${escapeHtml(item.code)}</span>
               </div>
             `).join('');
             wlSuggestBox.style.display = 'block';

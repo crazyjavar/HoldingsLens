@@ -1,67 +1,102 @@
-# HoldingsLens 🔍
+# HoldingsLens
 
-**HoldingsLens** 是一个高颜值、极客风的资产持仓可视化分析面板与个人投资助理系统。项目采用赛博朋克暗黑科技风设计，专为追求视觉美感与数据深度的投资者打造。
+HoldingsLens 是一个本地运行的 A 股、港股和 ETF 持仓分析面板。它会定时拉取行情，将持仓快照、交易流水和自选股保存在 SQLite，并通过单页网页展示组合市值、盈亏和历史趋势。
 
-[English](#english) | [简体中文](#简体中文)
+## 功能
 
----
+- 持仓市值、当日盈亏、累计盈亏和本月盈亏
+- 每日组合快照与 7/30/90/365 日历史趋势
+- 买入、卖出、交易撤销和加权成本回放
+- 自选股搜索、行情跟踪与拖拽排序
+- 上证、深证、创业板、恒生等指数行情
+- 港股使用 HKD → CNY 参考汇率折算
+- 隐私数值隐藏和桌面/移动端响应式布局
 
-## 简体中文
+## 技术栈
 
-### 🌟 核心特性
+- Node.js 22.5+（使用内置 `node:sqlite`）
+- Hono + `@hono/node-server`
+- SQLite
+- 原生 HTML/CSS/JavaScript
+- Chart.js + GSAP（页面通过 CDN 加载）
 
-1. **赛博科技风 UI 设计 (Cyberpunk Dark Aesthetic)**
-   * 采用深色背景（`#060814`）搭配双色霓虹渐变（青色与靛蓝色）的发光气场。
-   * 卡片采用磨砂玻璃拟态设计（Glassmorphism），支持平滑的鼠标悬浮微调及微光边框特效。
-   * 搭载苹果原生 **San Francisco (SF Pro)** 极客数字字体，带来利落、高级的数字阅读体验。
+## 启动
 
-2. **双重状态 AI 情绪助理 (Sentient AI Companion)**
-   * 面板顶部集成智能助理，根据组合的总盈亏自动激活对应的交互状态：
-     * **治愈贴贴模式（亏损时）**：CSS 渲染的萌系小猫咪，会眨眼、动耳朵、挥爪撒娇，并生成治愈温情的鼓励话语，安抚波动情绪。
-     * **雄霸天下模式（盈利时）**：Canvas 渲染的金色与青色霓虹粒子流和引力波冲击特效，配合霸气、硬核的文字轮播，带来绝对的胜利质感。
+```bash
+cd server
+npm ci
+npm start
+```
 
-3. **穿透式资产结构分析 (ETF Look-Through)**
-   * 支持多只 ETF（如中概互联、恒指科技、港股通互联网）底层持仓的深度穿透，一键洞察腾讯、阿里、美团等重仓股的实际真实暴露仓位与比重。
-   * 包含仓位结构分布与盈亏分布图表，直观呈现资产集中度与回撤分布。
+浏览器访问 [http://localhost:8123](http://localhost:8123)。开发时可以使用：
 
-4. **明细管理与操作记录**
-   * 支持通过本地 `holdings.csv` 文件一键管理持仓，包含成本价、现价、累计盈亏及占比。
-   * 特设“操作记录”列，方便随时追踪仓位的增减调整百分比。
+```bash
+npm run dev
+```
 
-### 📂 项目结构
+如需指定端口或数据库路径，可使用 `PORT` 和 `HOLDINGS_DB_PATH` 环境变量。
 
-* `持仓明细展示.html` - 核心可视化展示网页，本地双击即可运行。
-* `holdings.csv` - 数据源文件，包含所有持仓的明细与合计数据。
-* `update_holdings.py` - 持仓数据同步/更新脚本（Python 辅助脚本）。
-* `.gitignore` - 已自动配置，用于忽略 macOS 缓存文件 `.DS_Store` 及测试日志文件。
+启动时会立即尝试刷新行情，交易时段内每 5 分钟自动刷新。周末、节假日或开盘前行情日期仍是上一交易日时，不会写入新的每日快照。
 
----
+## 数据与行情来源
 
-## English
+- 持仓、交易、历史和自选数据：项目根目录的 `holdings.db`
+- 股票行情：腾讯行情为主，新浪行情为备用
+- HKD/CNY 参考汇率：[Frankfurter](https://frankfurter.dev/)
+- Chart.js 和 GSAP：公共 CDN
 
-### 🌟 Core Features
+汇率获取成功后会写入 `app_metadata`。外部汇率服务暂时不可用时，服务会使用 SQLite 中最近一次成功值；新库首次获取失败时才会回退到内置参考值。
 
-1. **Cyberpunk Dark Aesthetic UI**
-   * Deep navy-black background (`#060814`) decorated with subtle cyber grid pattern and dual neon cyan/indigo ambient radial glows.
-   * Glassmorphism panel cards featuring smooth hover transitions and neon border glows.
-   * Integrated Apple native **San Francisco (SF Pro)** typography stack for crisp and clean numerical display.
+## 数据模型
 
-2. **Sentient AI Companion**
-   * An interactive virtual assistant card built at the top row, dynamically responding to overall portfolio P&L:
-     * **Healing Mascot (Drawdowns)**: A cute CSS animated kitten that winks, twitches ears, waves paws, and rotates comforting quotes to soothe emotion during market dips.
-     * **Overlord Warp Effect (Profits)**: A high-performance Canvas particle storm with expanding circular neon shockwaves and epic dominating lines celebrating your gains.
+| 表 | 用途 |
+| --- | --- |
+| `opening_holdings` | 不可变的期初持仓，作为交易回放基线 |
+| `base_holdings` | 回放交易后的当前持仓和加权成本 |
+| `transactions` | 买入、卖出流水和成交时汇率 |
+| `holdings` | 每个交易日的单只持仓快照 |
+| `daily_summary` | 每个交易日的组合汇总 |
+| `watchlist` | 自选股元数据与排序 |
+| `watchlist_price` | 自选股每日价格快照 |
+| `app_metadata` | 汇率等可持久化的运行元数据 |
 
-3. **ETF Look-Through Analysis**
-   * Easily calculates underlying holdings (e.g. Tencent, Alibaba, Meituan) across multiple tech ETFs (Hang Seng TECH, CNH Internet) to reveal true asset exposure.
-   * Visualizes asset allocation structure and risk-weighted profit/loss distribution.
+旧版数据库首次使用新版服务时，会自动创建 `opening_holdings` 并迁移现有期初持仓。后续交易回放只依赖 SQLite，不再依赖代码中的种子常量。
 
-4. **Operation Tracker & Logging**
-   * Easily driven by `holdings.csv` containing market value, cost, price, and calculated weights.
-   * Specifically logs adjustments using the "Operation Record" column (percentage of added/reduced positions).
+## 备份
 
-### 📂 Project Structure
+停止服务后备份数据库：
 
-* `持仓明细展示.html` - The main visualization dashboard. Double-click to open in any browser.
-* `holdings.csv` - Data source file containing raw holdings and totals.
-* `update_holdings.py` - Python script for helper automated data syncing.
-* `.gitignore` - Standard gitignore configuration for OS/log caches.
+```bash
+cp holdings.db holdings.db.backup
+```
+
+若在服务运行中备份，建议使用 SQLite 的在线备份命令：
+
+```bash
+sqlite3 holdings.db ".backup 'holdings.db.backup'"
+```
+
+## 项目结构
+
+```text
+.
+├── holdings.db
+├── public/
+│   ├── 持仓明细展示.html
+│   └── winning_character.png
+├── server/
+│   ├── fetcher.js
+│   ├── package.json
+│   └── server.js
+└── README.md
+```
+
+## 注意事项
+
+- 项目以个人本地使用为目标，交易修改接口没有登录鉴权，不要直接暴露到公网。
+- 行情和汇率均来自第三方参考数据，不应当作交易所或券商结算数据。
+- 页面依赖公共 CDN，完全离线时图表和动画库不会加载。
+
+## License
+
+[MIT](LICENSE)

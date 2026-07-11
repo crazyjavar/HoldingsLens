@@ -14,13 +14,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
-import { fetchPrices, fetchPriceWithName, sinaSymbol } from './fetcher.js';
+import { fetchPrices, fetchPriceWithName, fetchHkdCnyRate, sinaSymbol } from './fetcher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
 // ── SQLite 初始化 ─────────────────────────────────────────
-const DB_PATH = resolve(ROOT, 'holdings.db');
+const DB_PATH = process.env.HOLDINGS_DB_PATH
+  ? resolve(process.env.HOLDINGS_DB_PATH)
+  : resolve(ROOT, 'holdings.db');
 const db = new DatabaseSync(DB_PATH);
 
 db.exec(`
@@ -58,6 +60,20 @@ db.exec(`
     name       TEXT NOT NULL,
     cost       REAL NOT NULL,
     quantity   REAL NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS opening_holdings (
+    code       TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    cost       REAL NOT NULL,
+    quantity   REAL NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS app_metadata (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
 
@@ -126,10 +142,61 @@ const SEED_HOLDINGS = [
   }
 }
 
-// ── 汇率推算（HK 股需要港币→人民币换算）────────────────────
-// 使用已知市值反推汇率，保持与原 Python 逻辑一致
-// 初始化时从最新数据库记录中读取，若无则用固定近似值
-let cachedFxRate = 0.9148; // 港币→人民币参考汇率
+// 一次性将原先依赖代码常量的期初持仓迁移到 SQLite。
+// 已有种子标的按旧期初值迁移；无交易的手工持仓以当前值作为期初值；
+// 由交易新增的非种子标的以 0 作为期初值。
+{
+  const count = db.prepare('SELECT COUNT(*) AS n FROM opening_holdings').get();
+  if (!count || count['n'] === 0) {
+    const bases = db.prepare('SELECT * FROM base_holdings').all();
+    const txCountStmt = db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE code = ?');
+    const insert = db.prepare(`
+      INSERT INTO opening_holdings (code, name, cost, quantity, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const now = new Date().toISOString();
+    db.exec('BEGIN');
+    try {
+      for (const h of bases) {
+        const seed = SEED_HOLDINGS.find(item => item.code === h['code']);
+        const txCount = txCountStmt.get(h['code'])?.['n'] ?? 0;
+        const opening = seed || (txCount === 0
+          ? { cost: h['cost'], quantity: h['quantity'] }
+          : { cost: 0, quantity: 0 });
+        insert.run(h['code'], h['name'], opening.cost, opening.quantity, now);
+      }
+      db.exec('COMMIT');
+      console.log('[init] opening_holdings 期初持仓已迁移到 SQLite');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+}
+
+// ── HKD → CNY 参考汇率（远程真实汇率 + SQLite 最近成功值降级）──
+const storedFxRate = db.prepare("SELECT value FROM app_metadata WHERE key = 'hkd_cny_rate'").get();
+let cachedFxRate = Number(storedFxRate?.value) || 0.9148;
+let cachedFxDate = db.prepare("SELECT value FROM app_metadata WHERE key = 'hkd_cny_date'").get()?.value || null;
+
+async function refreshFxRate() {
+  try {
+    const result = await fetchHkdCnyRate();
+    cachedFxRate = result.rate;
+    cachedFxDate = result.date;
+    const upsert = db.prepare(`
+      INSERT INTO app_metadata (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+    `);
+    const now = new Date().toISOString();
+    upsert.run('hkd_cny_rate', String(result.rate), now);
+    upsert.run('hkd_cny_date', result.date || '', now);
+    return { ...result, fallback: false };
+  } catch (err) {
+    console.warn(`[fx] 真实汇率获取失败，使用最近成功值 ${cachedFxRate}: ${err.message}`);
+    return { rate: cachedFxRate, date: cachedFxDate, source: 'cache', fallback: true };
+  }
+}
 
 /**
  * 将证券代码格式（如 512170.SH）转换为行情符号（sh512170）
@@ -153,19 +220,7 @@ function isTradingHours() {
   return total >= 9 * 60 + 25 && total <= 15 * 60 + 5;
 }
 
-/**
- * 推算港股换算汇率（通过市值/现价/数量反推）
- */
-function impliedFx(market, price, quantity) {
-  if (market > 0 && price > 0 && quantity > 0) {
-    return market / (price * quantity);
-  }
-  return cachedFxRate;
-}
-
-/**
- * 核心：拉取行情并写入 SQLite
- */
+/** 核心：拉取行情并写入 SQLite */
 let lastRefreshTime = null;
 let refreshLock = false;
 
@@ -190,14 +245,25 @@ export async function refreshHoldings() {
     // 从 DB 读取持仓（取代硬编码 SEED_HOLDINGS）
     const baseHoldings = db.prepare('SELECT * FROM base_holdings').all();
     const symbols = baseHoldings.map(h => toSymbol(h['code']));
-    const quotes = await fetchPrices(symbols);
-
     const today = new Date().toLocaleString('en-CA', {
       timeZone: 'Asia/Shanghai',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
     }).slice(0, 10); // YYYY-MM-DD
+    const [quotes] = await Promise.all([
+      fetchPrices(symbols),
+      refreshFxRate(),
+    ]);
+
+    // 开盘前或 A/H 股同时休市时，行情源只会返回上一交易日。
+    // 当所有可判定的行情日期都不是今天时，不写入今日快照。
+    const quoteDates = Object.values(quotes).map(q => q.lastTradeDate).filter(Boolean);
+    if (quoteDates.length > 0 && !quoteDates.includes(today)) {
+      const uniqueDates = [...new Set(quoteDates)];
+      console.log(`[refresh] 当前无已开盘市场（行情日期: ${uniqueDates.join(', ')}），跳过写入`);
+      return { skipped: true, reason: 'no_market_open', quoteDates: uniqueDates };
+    }
 
     let totalMarket = 0;
     let totalCostValue = 0;
@@ -212,43 +278,65 @@ export async function refreshHoldings() {
       const quote = quotes[sym];
       if (!quote) continue;
 
-      const { current, previousClose } = quote;
+      const { current, previousClose, lastTradeDate } = quote;
       const code     = holding['code'];
       const name     = holding['name'];
       const cost     = holding['cost'];
       const quantity = holding['quantity'];
 
-      // 港股需要换算汇率
-      const isHK = code.endsWith('.HK');
-      // 先查数据库最新 fx 推算
+      // 查询今天以前的最新历史记录，用作昨收价锚定
       const latestRow = db.prepare(
-        'SELECT market, price, quantity FROM holdings WHERE code = ? ORDER BY date DESC LIMIT 1'
-      ).get(code);
-      const fx = latestRow
-        ? impliedFx(latestRow['market'], latestRow['price'], latestRow['quantity'])
-        : (isHK ? cachedFxRate : 1);
-      if (isHK && fx > 0) cachedFxRate = fx;
+        'SELECT market, price, quantity FROM holdings WHERE code = ? AND date < ? ORDER BY date DESC LIMIT 1'
+      ).get(code, today);
 
-      const market   = Math.round(current * quantity * fx * 100) / 100;
-      const prevMkt  = previousClose > 0 ? Math.round(previousClose * quantity * fx * 100) / 100 : 0;
+      // 港股使用已获取并持久化的真实参考汇率
+      const isHK = code.endsWith('.HK');
+      const fx = isHK ? cachedFxRate : 1.0;
+
+      // 确定今天计算所用的“昨收价”（优先使用数据库中历史最后一天的实际价格，若无，则回退使用行情接口昨收价）
+      const prevCloseToUse = (latestRow && latestRow.price > 0) ? latestRow.price : previousClose;
+
+      // 重要判定：该标的今天是否交易（只有当行情拉取的最后交易日期明确且不等于今天，才判定为休市）
+      const isClosedToday = (lastTradeDate && lastTradeDate !== today);
+
+      let market, prevMkt, dayPnl, dayRate;
+
+      if (isClosedToday) {
+        // 如果今天休市，现价强制等于昨收价，使单只标的的日盈亏与涨跌幅归零
+        const priceToUse = prevCloseToUse;
+        market   = Math.round(priceToUse * quantity * fx * 100) / 100;
+        prevMkt  = Math.round(prevCloseToUse * quantity * fx * 100) / 100;
+        dayPnl   = 0.0;
+        dayRate  = '0.00%';
+        console.log(`[refresh] 标的 ${name} (${code}) 今天休市 (最后交易日 ${lastTradeDate})，当日盈亏归零`);
+      } else {
+        market   = Math.round(current * quantity * fx * 100) / 100;
+        prevMkt  = prevCloseToUse > 0 ? Math.round(prevCloseToUse * quantity * fx * 100) / 100 : 0;
+        dayPnl   = Math.round((market - prevMkt) * 100) / 100;
+        dayRate  = prevCloseToUse > 0
+          ? `${((current - prevCloseToUse) / prevCloseToUse * 100).toFixed(2)}%`
+          : '0.00%';
+      }
+
       const costVal  = Math.round(cost * quantity * fx * 100) / 100;
-      const dayPnl   = Math.round((market - prevMkt) * 100) / 100;
       const pnl      = Math.round((market - costVal) * 100) / 100;
-      const dayRate  = previousClose > 0
-        ? `${((current - previousClose) / previousClose * 100).toFixed(2)}%`
-        : '0.00%';
       const pnlRate  = cost > 0
         ? `${((current - cost) / cost * 100).toFixed(2)}%`
         : '0.00%';
 
       totalMarket    += market;
       totalCostValue += costVal;
-      totalDayPnl    += dayPnl;
-      if (prevMkt > 0) totalPrevMarket += prevMkt;
+      
+      // 只有当标的今天没有休市，才将其盈亏和市值累加进“今日盈亏”与“当日收益率除数”
+      if (!isClosedToday) {
+        totalDayPnl    += dayPnl;
+        if (prevMkt > 0) totalPrevMarket += prevMkt;
+      }
+      
       totalPnl       += pnl;
 
-      rows.push({ date: today, code, name, market, cost, prev_close: previousClose,
-        price: current, quantity, day_pnl: dayPnl, day_pnl_pct: dayRate,
+      rows.push({ date: today, code, name, market, cost, prev_close: prevCloseToUse,
+        price: isClosedToday ? prevCloseToUse : current, quantity, day_pnl: dayPnl, day_pnl_pct: dayRate,
         total_pnl: pnl, total_pnl_pct: pnlRate, weight: null, change_pct: '-' });
     }
 
@@ -268,7 +356,8 @@ export async function refreshHoldings() {
         (:date, :code, :name, :market, :cost, :prev_close, :price, :quantity,
          :day_pnl, :day_pnl_pct, :total_pnl, :total_pnl_pct, :weight, :change_pct)
       ON CONFLICT(date, code) DO UPDATE SET
-        market=excluded.market, prev_close=excluded.prev_close, price=excluded.price,
+        market=excluded.market, cost=excluded.cost, prev_close=excluded.prev_close,
+        price=excluded.price, quantity=excluded.quantity,
         day_pnl=excluded.day_pnl, day_pnl_pct=excluded.day_pnl_pct,
         total_pnl=excluded.total_pnl, total_pnl_pct=excluded.total_pnl_pct,
         weight=excluded.weight
@@ -478,7 +567,12 @@ app.get('/api/base-holdings', (c) => {
       tx_count:   txCount ? txCount['n'] : 0,
     };
   });
-  return c.json({ holdings: result, fx_rate: cachedFxRate });
+  return c.json({
+    holdings: result,
+    fx_rate: cachedFxRate,
+    fx_date: cachedFxDate,
+    fx_source: 'Frankfurter',
+  });
 });
 
 /**
@@ -502,9 +596,29 @@ app.post('/api/transactions', async (c) => {
   if (!(quantity > 0))    return c.json({ error: '股数必须大于0' }, 400);
   if (!(amountCny > 0))   return c.json({ error: '金额必须大于0' }, 400);
 
-  // 查当前持仓
-  const bh = db.prepare('SELECT * FROM base_holdings WHERE code = ?').get(code);
-  if (!bh) return c.json({ error: `${code} 不在持仓列表中，请先添加持仓` }, 404);
+  // 查当前持仓；新标的先获取名称，数据库写入稍后统一进入事务
+  let bh = db.prepare('SELECT * FROM base_holdings WHERE code = ?').get(code);
+  let isNewHolding = false;
+  if (!bh) {
+    if (type !== 'buy') {
+      return c.json({ error: `无法卖出未持仓的证券 ${code}` }, 400);
+    }
+
+    // 自动获取新买入证券的中文名称
+    let nameFromQuote = code;
+    try {
+      const sym = toSymbol(code);
+      const quote = await fetchPriceWithName(sym);
+      if (quote && quote.name) {
+        nameFromQuote = quote.name;
+      }
+    } catch (err) {
+      console.warn(`[tx] 无法获取证券 ${code} 的官方名称，将使用代码替代:`, err.message);
+    }
+
+    bh = { code, name: nameFromQuote, cost: 0.0, quantity: 0.0 };
+    isNewHolding = true;
+  }
 
   // 卖出不超过持仓
   if (type === 'sell' && quantity > bh['quantity']) {
@@ -515,18 +629,35 @@ app.post('/api/transactions', async (c) => {
 
   // 推算成交价（原始货币）
   const isHK  = code.endsWith('.HK');
+  if (isHK) await refreshFxRate();
   const fxRate = isHK ? cachedFxRate : 1.0;
   // 港股: CNY / 汇率 / 股数 = HKD 每股; A股: CNY / 股数 = CNY 每股
   const price = amountCny / fxRate / quantity;
 
-  // 写入 transactions 表
-  db.prepare(`
-    INSERT INTO transactions (code, type, trade_date, price, quantity, amount_cny, fx_rate, note, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(code, type, tradeDate, price, quantity, amountCny, fxRate, note, new Date().toISOString());
-
-  // 回放重算 base_holdings（从第一笔交易开始累计）
-  replayHolding(code, bh['name']);
+  // 新增流水、创建新标的、回放持仓必须全部成功或全部回滚
+  db.exec('BEGIN');
+  try {
+    const now = new Date().toISOString();
+    if (isNewHolding) {
+      db.prepare(`
+        INSERT INTO opening_holdings (code, name, cost, quantity, created_at)
+        VALUES (?, ?, 0.0, 0.0, ?)
+      `).run(code, bh['name'], now);
+      db.prepare(`
+        INSERT INTO base_holdings (code, name, cost, quantity, updated_at)
+        VALUES (?, ?, 0.0, 0.0, ?)
+      `).run(code, bh['name'], now);
+    }
+    db.prepare(`
+      INSERT INTO transactions (code, type, trade_date, price, quantity, amount_cny, fx_rate, note, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(code, type, tradeDate, price, quantity, amountCny, fxRate, note, now);
+    replayHolding(code);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return c.json({ error: `交易写入失败: ${err.message}` }, 500);
+  }
 
   const updated = db.prepare('SELECT * FROM base_holdings WHERE code = ?').get(code);
   console.log(`[tx] ${type} ${code} ×${quantity} @¥${amountCny} → 新成本 ${updated['cost'].toFixed(4)}, 持仓 ${updated['quantity']}`);
@@ -545,13 +676,13 @@ app.post('/api/transactions', async (c) => {
 
 /**
  * 回放重算某只股票的 base_holdings
- * 从初始种子成本出发，按时间顺序叠加所有交易记录
+ * 从 SQLite 期初持仓出发，按时间顺序叠加所有交易记录
  */
-function replayHolding(code, name) {
-  // 种子数据（初始化时写入的第一条记录视为初始状态）
-  const seed = SEED_HOLDINGS.find(h => h.code === code);
-  let cost     = seed ? seed.cost     : 0;
-  let quantity = seed ? seed.quantity : 0;
+function replayHolding(code) {
+  const opening = db.prepare('SELECT cost, quantity FROM opening_holdings WHERE code = ?').get(code);
+  if (!opening) throw new Error(`${code} 缺少期初持仓记录`);
+  let cost     = opening['cost'];
+  let quantity = opening['quantity'];
 
   // 按交易日期升序回放所有交易
   const txList = db.prepare(
@@ -593,11 +724,15 @@ app.delete('/api/transactions/:id', (c) => {
   if (!tx) return c.json({ error: `交易记录 #${id} 不存在` }, 404);
 
   const code = tx['code'];
-  const bh   = db.prepare('SELECT name FROM base_holdings WHERE code = ?').get(code);
-  const name = bh ? bh['name'] : code;
-
-  db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
-  replayHolding(code, name);
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
+    replayHolding(code);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return c.json({ error: `撤销失败: ${err.message}` }, 500);
+  }
 
   const updated = db.prepare('SELECT * FROM base_holdings WHERE code = ?').get(code);
   console.log(`[tx] 撤销 #${id}，${code} 回放后: 成本 ${updated['cost'].toFixed(4)}, 持仓 ${updated['quantity']}`);
@@ -877,7 +1012,7 @@ console.log('[startup] 服务启动，立即拉取一次行情...');
 refreshHoldings().catch(err => console.error('[startup] 初次抓取失败:', err.message));
 
 // ── 启动服务器 ────────────────────────────────────────────
-const PORT = 8123;
+const PORT = Number(process.env.PORT) || 8123;
 serve({ fetch: app.fetch, port: PORT }, () => {
   console.log(`\n✅ 持仓明细服务已启动`);
   console.log(`   http://localhost:${PORT}`);

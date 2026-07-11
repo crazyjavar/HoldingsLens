@@ -13,6 +13,21 @@ const TENCENT_PRICE_FIELD = 3;
 const TENCENT_PREV_CLOSE_FIELD = 4;
 
 /**
+ * 规范化解析腾讯/新浪的交易时间戳为 YYYY-MM-DD
+ */
+function parseTradeDate(str) {
+  if (!str) return null;
+  const clean = str.trim();
+  if (clean.includes('/')) {
+    return clean.slice(0, 10).replace(/\//g, '-');
+  }
+  if (clean.length >= 8 && /^\d+$/.test(clean.slice(0, 8))) {
+    return clean.slice(0, 8).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3');
+  }
+  return null;
+}
+
+/**
  * 将证券代码转换为新浪格式（如 512170.SH → sh512170）
  */
 export function sinaSymbol(code) {
@@ -35,18 +50,25 @@ function parseSinaResponse(body) {
     const right = line.slice(eqIdx + 2).replace(/";?\s*$/, '');
     const symbol = left.split('_').pop();
     const fields = right.split(',');
-    let current, previousClose;
+    let current, previousClose, lastTradeDate = null;
     if ((symbol.startsWith('sh') || symbol.startsWith('sz')) && fields.length > CN_PRICE_FIELD) {
       previousClose = parseFloat(fields[CN_PREV_CLOSE_FIELD]) || 0;
       current = parseFloat(fields[CN_PRICE_FIELD]) || 0;
+      if (fields[30] && fields[30].includes('-')) {
+        lastTradeDate = fields[30].trim();
+      }
     } else if (symbol.startsWith('hk') && fields.length > HK_PRICE_FIELD) {
       previousClose = parseFloat(fields[HK_PREV_CLOSE_FIELD]) || 0;
       current = parseFloat(fields[HK_PRICE_FIELD]) || 0;
+      const dateField = fields.find(f => /^\d{4}[\/\-]\d{2}[\/\-]\d{2}$/.test(f.trim()));
+      if (dateField) {
+        lastTradeDate = dateField.trim().replace(/\//g, '-');
+      }
     } else {
       continue;
     }
     if (current > 0) {
-      prices[symbol] = { current, previousClose };
+      prices[symbol] = { current, previousClose, lastTradeDate };
     }
   }
   return prices;
@@ -69,8 +91,8 @@ function parseTencentResponse(body, withNames = false) {
     const current = parseFloat(fields[TENCENT_PRICE_FIELD]) || 0;
     const previousClose = parseFloat(fields[TENCENT_PREV_CLOSE_FIELD]) || 0;
     if (current > 0) {
-      prices[symbol] = { current, previousClose };
-      // fields[1] 为腾讯行情中的股票名称
+      const tradeDateStr = fields[30] ? parseTradeDate(fields[30]) : null;
+      prices[symbol] = { current, previousClose, lastTradeDate: tradeDateStr };
       if (withNames && fields[1]) {
         prices[symbol].name = fields[1].trim();
       }
@@ -146,6 +168,26 @@ export async function fetchPrices(symbols) {
     throw new Error(`未获取到现价: ${remaining.join(', ')} (${detail})`);
   }
   return prices;
+}
+
+/**
+ * 获取最新 HKD → CNY 参考汇率。
+ * Frankfurter 提供无需 API Key 的央行参考汇率聚合接口。
+ */
+export async function fetchHkdCnyRate() {
+  const resp = await fetch('https://api.frankfurter.dev/v2/rate/HKD/CNY', {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!resp.ok) throw new Error(`汇率接口 HTTP ${resp.status}`);
+  const data = await resp.json();
+  const rate = Number(data?.rate);
+  if (!(rate > 0)) throw new Error('汇率接口未返回有效 HKD/CNY 汇率');
+  return {
+    rate,
+    date: data.date || null,
+    source: 'Frankfurter',
+  };
 }
 
 /**
