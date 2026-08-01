@@ -293,11 +293,15 @@ export async function refreshHoldings() {
       const isHK = code.endsWith('.HK');
       const fx = isHK ? cachedFxRate : 1.0;
 
-      // 确定今天计算所用的“昨收价”（优先使用数据库中历史最后一天的实际价格，若无，则回退使用行情接口昨收价）
-      const prevCloseToUse = (latestRow && latestRow.price > 0) ? latestRow.price : previousClose;
-
       // 重要判定：该标的今天是否交易（只有当行情拉取的最后交易日期明确且不等于今天，才判定为休市）
       const isClosedToday = (lastTradeDate && lastTradeDate !== today);
+
+      // 确定今天计算所用的“昨收价”
+      // 1. 如果今天休市，为了将其当日盈亏归零，优先使用数据库历史最新收盘价（latestRow.price），无历史记录时回退使用行情接口昨收
+      // 2. 如果今天正常交易，为了采用最权威的数据并具备自愈校正能力，直接使用行情源返回的官方昨收价 previousClose！
+      const prevCloseToUse = isClosedToday
+        ? ((latestRow && latestRow.price > 0) ? latestRow.price : previousClose)
+        : previousClose;
 
       let market, prevMkt, dayPnl, dayRate;
 
@@ -314,8 +318,8 @@ export async function refreshHoldings() {
         prevMkt  = prevCloseToUse > 0 ? Math.round(prevCloseToUse * quantity * fx * 100) / 100 : 0;
         dayPnl   = Math.round((market - prevMkt) * 100) / 100;
         dayRate  = prevCloseToUse > 0
-          ? `${((current - prevCloseToUse) / prevCloseToUse * 100).toFixed(2)}%`
-          : '0.00%';
+          ? `${(Math.trunc(((current - prevCloseToUse) / prevCloseToUse * 100) * 1000) / 1000).toFixed(3)}%`
+          : '0.000%';
       }
 
       const costVal  = Math.round(cost * quantity * fx * 100) / 100;
@@ -374,8 +378,8 @@ export async function refreshHoldings() {
 
     // 写入 daily_summary 表
     const totalDayRate = totalPrevMarket > 0
-      ? `${(totalDayPnl / totalPrevMarket * 100).toFixed(2)}%`
-      : '0.00%';
+      ? `${(Math.trunc((totalDayPnl / totalPrevMarket * 100) * 1000) / 1000).toFixed(3)}%`
+      : '0.000%';
     const totalPnlRate = totalCostValue > 0
       ? `${(totalPnl / totalCostValue * 100).toFixed(2)}%`
       : '0.00%';
@@ -841,7 +845,7 @@ app.get('/api/stocks/search', async (c) => {
   }
 });
 
-/** GET /api/indices — 获取大盘指数行情（上证、深证、创业板、恒生科技） */
+/** GET /api/indices — 获取大盘指数行情（上证、深证、创业板、恒生科技、黄金等） */
 app.get('/api/indices', async (c) => {
   const symbols = [
     'sh000001', 'sz399001', 'sz399006', 
@@ -850,19 +854,63 @@ app.get('/api/indices', async (c) => {
   ];
   try {
     const url = `https://qt.gtimg.cn/q=${symbols.join(',')}`;
-    const resp = await fetch(url, {
+    // 并行获取实时指数、国内现货黄金(SGE_AU9999)以及历史K线
+    const klineSymbols = ['sh000001', 'sz399001', 'sz399006'];
+    const klinePromises = klineSymbols.map(sym => 
+      fetch(`https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sym}&scale=240&ma=no&datalen=40`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(6000)
+      }).then(r => r.json()).catch(() => [])
+    );
+
+    const sgePromise = fetch('https://hq.sinajs.cn/list=SGE_AU9999', {
       headers: {
-        Referer: 'https://gu.qq.com/',
+        Referer: 'https://finance.sina.com.cn/',
         'User-Agent': 'Mozilla/5.0',
       },
       signal: AbortSignal.timeout(10000),
-    });
-    if (!resp.ok) return c.json({ indices: [] });
+    }).then(async r => {
+      if (!r.ok) return null;
+      const buf = await r.arrayBuffer();
+      const body = new TextDecoder('gbk').decode(buf);
+      const match = body.match(/="([^"]+)"/);
+      if (!match) return null;
+      const fields = match[1].split(',');
+      if (fields.length < 10) return null;
+      const current = parseFloat(fields[3]) || 0;
+      const prevClose = parseFloat(fields[9]) || 0;
+      if (current === 0) return null;
+      const changeVal = prevClose > 0 ? current - prevClose : 0;
+      const changePct = prevClose > 0 ? (changeVal / prevClose) * 100 : 0;
+      return {
+        symbol: 'SGE_AU9999',
+        name: '国内现货黄金',
+        current,
+        changeVal,
+        changePct,
+      };
+    }).catch(() => null);
+
+    const [resp, sgeData, ...klineResults] = await Promise.all([
+      fetch(url, {
+        headers: {
+          Referer: 'https://gu.qq.com/',
+          'User-Agent': 'Mozilla/5.0',
+        },
+        signal: AbortSignal.timeout(10000),
+      }),
+      sgePromise,
+      ...klinePromises
+    ]);
+
+    if (!resp.ok) return c.json({ indices: [], month_change: {} });
 
     const buf = await resp.arrayBuffer();
     const body = new TextDecoder('gbk').decode(buf);
 
-    const result = [];
+    const itemsMap = {};
+    const priceMap = {}; // 用以辅助计算 K 线对比
+
     for (const entry of body.split(';')) {
       const e = entry.trim();
       if (!e || !e.includes('="')) continue;
@@ -889,19 +937,99 @@ app.get('/api/indices', async (c) => {
       const changeVal = parseFloat(fields[31]) || 0;
       const changePct = parseFloat(fields[32]) || 0;
 
-      result.push({
+      priceMap[symbol] = current;
+
+      itemsMap[symbol] = {
         symbol,
         name,
         current,
         changeVal,
         changePct,
-      });
+      };
     }
 
-    return c.json({ indices: result });
+    // 周末或实时接口返回空值时，使用新浪日 K 线最近两个交易日的收盘价。
+    // 这样“跑赢大盘”的当日模式仍显示最近交易日数据，不会把指数误显示为 0。
+    const bjNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+    const isWeekend = bjNow.getDay() === 0 || bjNow.getDay() === 6;
+    const latestKlineMap = {};
+    klineSymbols.forEach((sym, idx) => {
+      const rows = (klineResults[idx] || [])
+        .filter(row => row?.day && Number(row.close) > 0)
+        .sort((a, b) => a.day.localeCompare(b.day));
+      const latest = rows.at(-1);
+      const previous = rows.at(-2);
+      if (!latest) return;
+
+      const latestClose = Number(latest.close);
+      const previousClose = previous ? Number(previous.close) : 0;
+      latestKlineMap[sym] = { latestClose, previousClose, latestDate: latest.day };
+
+      if (isWeekend || !itemsMap[sym] || itemsMap[sym].current <= 0) {
+        const changeVal = previousClose > 0 ? latestClose - previousClose : 0;
+        const changePct = previousClose > 0 ? (changeVal / previousClose) * 100 : 0;
+        const existing = itemsMap[sym] || { symbol: sym, name: sym };
+        itemsMap[sym] = { ...existing, current: latestClose, changeVal, changePct };
+        priceMap[sym] = latestClose;
+      }
+    });
+
+    if (sgeData) {
+      itemsMap['SGE_AU9999'] = sgeData;
+    }
+
+    const orderedSymbols = [
+      'sh000001', 'sz399001', 'sz399006', 
+      'hkHSI', 'hkHSTECH', 'sh518880', 'SGE_AU9999',
+      'sh000510', 'sh000852', 'sh000688', 'bj899050'
+    ];
+
+    const result = orderedSymbols.map(sym => itemsMap[sym]).filter(Boolean);
+
+    // 计算当月收益率百分比
+    const monthChange = {};
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    
+    // 确定上个月
+    const prevYear = curMonth === 1 ? curYear - 1 : curYear;
+    const prevMonth = curMonth === 1 ? 12 : curMonth - 1;
+    const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+
+    klineSymbols.forEach((sym, idx) => {
+      const kline = klineResults[idx] || [];
+      const currentPrice = (isWeekend ? latestKlineMap[sym]?.latestClose : priceMap[sym]) || 0;
+      if (currentPrice === 0 || kline.length === 0) {
+        monthChange[sym] = 0.0;
+        return;
+      }
+      
+      const prevMonthRows = kline.filter(r => r.day.startsWith(prevMonthStr));
+      let basePrice = 0;
+      if (prevMonthRows.length > 0) {
+        prevMonthRows.sort((a, b) => a.day.localeCompare(b.day));
+        basePrice = parseFloat(prevMonthRows[prevMonthRows.length - 1].close);
+      } else {
+        const curMonthStr = `${curYear}-${String(curMonth).padStart(2, '0')}`;
+        const curMonthRows = kline.filter(r => r.day.startsWith(curMonthStr));
+        if (curMonthRows.length > 0) {
+          curMonthRows.sort((a, b) => a.day.localeCompare(b.day));
+          basePrice = parseFloat(curMonthRows[0].open);
+        }
+      }
+
+      if (basePrice > 0) {
+        monthChange[sym] = Math.trunc(((currentPrice - basePrice) / basePrice * 100) * 1000) / 1000;
+      } else {
+        monthChange[sym] = 0.0;
+      }
+    });
+
+    return c.json({ indices: result, month_change: monthChange });
   } catch (err) {
     console.error('Fetch indices error:', err);
-    return c.json({ indices: [] });
+    return c.json({ indices: [], month_change: {} });
   }
 });
 

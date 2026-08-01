@@ -151,10 +151,122 @@
     /* ── KPI 网格 ────────────────────── */
     .top-row-grid {
       display: grid;
-      grid-template-columns: 1fr 340px;
+      grid-template-columns: 1fr 280px 340px;
       gap: 18px;
       margin-bottom: 18px;
       align-items: stretch;
+    }
+
+    .top-row-grid > *, .kpi-grid, .kpi { min-width: 0; }
+
+    /* ── 对比跑赢大盘卡片样式 ────────────────── */
+    .compare-panel {
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+    }
+    .compare-switch {
+      display: flex;
+      gap: 6px;
+    }
+    .compare-btn {
+      height: 24px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .compare-btn.active {
+      background: var(--blue);
+      color: #fff;
+      border-color: var(--blue);
+    }
+    .compare-btn:hover:not(.active) {
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .compare-body {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      justify-content: space-around;
+      padding: 6px 0 2px;
+    }
+    .compare-hero {
+      text-align: center;
+      margin-bottom: 6px;
+    }
+    .compare-hero-label {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+    .compare-hero-value {
+      font-size: 26px;
+      font-weight: 700;
+      font-family: 'Space Grotesk', sans-serif;
+      margin-top: 3px;
+    }
+    .compare-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .compare-bar-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .bar-label {
+      font-size: 12px;
+      color: var(--muted);
+      width: 28px;
+      font-weight: 500;
+    }
+    .bar-track {
+      position: relative;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+      overflow: visible;
+      flex: 1;
+    }
+    .bar-track::before {
+      content: '';
+      position: absolute;
+      top: -3px;
+      bottom: -3px;
+      left: 50%;
+      width: 1px;
+      background: rgba(255, 255, 255, 0.2);
+      z-index: 2;
+    }
+    .bar-fill {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      border-radius: 4px;
+      transition: all 0.4s ease-out;
+    }
+    .bar-fill.positive {
+      background: linear-gradient(90deg, #f43f5e, #ff4b5c);
+      box-shadow: 0 0 6px rgba(244, 63, 94, 0.3);
+    }
+    .bar-fill.negative {
+      background: linear-gradient(90deg, #00d2ff, #00f0ff);
+      box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
+    }
+    .bar-value {
+      font-size: 11px;
+      width: 48px;
+      text-align: right;
+      font-family: 'Space Grotesk', monospace;
+      font-weight: 600;
     }
 
     .kpi-grid {
@@ -173,6 +285,7 @@
       backdrop-filter: blur(12px);
       box-shadow: var(--shadow);
       transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+      overflow: hidden;
     }
     .kpi:hover {
       transform: translateY(-2px);
@@ -181,7 +294,7 @@
     }
 
     .kpi-label { color: var(--muted); font-size: 13px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .kpi-value { color: var(--ink); font-family: var(--font-tech); font-size: clamp(20px, 2.6vw, 32px); line-height: 1.05; font-weight: 700; white-space: nowrap; }
+    .kpi-value { color: var(--ink); font-family: var(--font-tech); font-size: clamp(18px, 2.4vw, 30px); line-height: 1.05; font-weight: 700; letter-spacing: -0.04em; white-space: nowrap; }
     .kpi-foot { margin-top: 6px; color: var(--muted); font-size: 12px; }
 
     .summary-value.negative, .bar-value.negative, td.negative { color: var(--green); text-shadow: 0 0 8px rgba(16,185,129,0.2); }
@@ -588,7 +701,7 @@
       gap: 8px;
     }
 
-    .day-btn {
+    .history-period-btn {
       height: 28px;
       padding: 0 12px;
       border: 1px solid var(--line);
@@ -599,13 +712,76 @@
       cursor: pointer;
       transition: all 0.2s;
     }
-    .day-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-    .day-btn:hover:not(.active) { border-color: var(--cyan); color: var(--cyan); }
+    .history-period-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .history-period-btn:hover:not(.active) { border-color: var(--cyan); color: var(--cyan); }
+
+    .pnl-mode-btn {
+      height: 28px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .pnl-mode-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .pnl-mode-btn:hover:not(.active) { border-color: var(--cyan); color: var(--cyan); }
+
+    .history-view-btn {
+      height: 28px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .history-view-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .history-view-btn:hover:not(.active) { border-color: var(--cyan); color: var(--cyan); }
+
+    .control-separator {
+      color: var(--line);
+      display: flex;
+      align-items: center;
+      user-select: none;
+      font-size: 14px;
+      padding: 0 4px;
+    }
 
     .chart-container {
       position: relative;
       padding: 16px 20px 20px;
       height: 260px;
+    }
+
+    .history-visuals { padding-bottom: 18px; }
+    .income-calendar { padding: 0 20px 20px; }
+    .calendar-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .calendar-title { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; }
+    .calendar-summary { color: var(--muted); font-size: 12px; }
+    .calendar-weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+    .calendar-weekdays { margin-bottom: 6px; color: var(--muted); font-size: 11px; text-align: center; }
+    .calendar-cell { min-height: 48px; padding: 6px 5px; border: 1px solid rgba(51,65,85,0.35); border-radius: 7px; background: rgba(15,23,42,0.52); }
+    .calendar-cell.empty { border-color: transparent; background: transparent; }
+    .calendar-cell.gain { background: rgba(244,63,94,0.16); border-color: rgba(244,63,94,0.32); }
+    .calendar-cell.loss { background: rgba(16,185,129,0.16); border-color: rgba(16,185,129,0.32); }
+    .calendar-date { display: block; color: var(--muted); font-size: 10px; line-height: 1; }
+    .calendar-value { display: block; margin-top: 7px; color: var(--ink); font-family: var(--font-tech); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .calendar-cell.gain .calendar-value { color: #fb7185; }
+    .calendar-cell.loss .calendar-value { color: #34d399; }
+    .calendar-legend { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
+    .calendar-legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .legend-dot { width: 9px; height: 9px; display: inline-block; border-radius: 3px; }
+    .legend-dot.gain { background: rgba(244,63,94,0.75); }
+    .legend-dot.loss { background: rgba(16,185,129,0.75); }
+    @media (max-width: 700px) {
+      .history-controls { flex-wrap: wrap; }
+      .calendar-cell { min-height: 42px; padding: 5px 3px; }
+      .calendar-value { font-size: 10px; }
     }
 
     /* ── 仓位/盈亏 Bar ───────────────── */
@@ -678,6 +854,23 @@
     .name-cell { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
     .name-cell strong { color: var(--ink); }
     .code { color: var(--muted); font-size: 12px; }
+
+    .portfolio-hk-row td { background: rgba(251,191,36,0.045); }
+    .portfolio-market-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      margin-left: 6px;
+      padding: 0 6px;
+      border: 1px solid rgba(251,191,36,0.4);
+      border-radius: 4px;
+      color: #fbbf24;
+      background: rgba(251,191,36,0.15);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      vertical-align: middle;
+    }
 
     .tag { display: inline-flex; align-items: center; justify-content: center; min-width: 64px; height: 24px; padding: 0 9px; border-radius: 4px; font-size: 12px; color: var(--text); background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
     .tag.loss { color: var(--green); background: var(--green-soft); border-color: rgba(16,185,129,0.2); }
@@ -1042,6 +1235,16 @@
     }
 
     /* ── 响应式 ──────────────────────── */
+    @media (max-width: 1350px) and (min-width: 1081px) {
+      .top-row-grid {
+        grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+      }
+
+      .effect-panel {
+        grid-column: 1 / -1;
+      }
+    }
+
     @media (max-width: 1080px) {
       .top-row-grid, .grid { grid-template-columns: 1fr; }
     }
@@ -1206,6 +1409,53 @@
             </div>
           </div>
 
+          <!-- 跑赢大盘对比卡片 -->
+          <article class="panel compare-panel">
+            <div class="panel-header">
+              <h2 class="panel-title">跑赢大盘</h2>
+              <div class="compare-switch" id="compareSwitch">
+                <button type="button" class="compare-btn active" data-period="day">当日</button>
+                <button type="button" class="compare-btn" data-period="month">本月</button>
+              </div>
+            </div>
+            <div class="compare-body">
+              <div class="compare-hero">
+                <div class="compare-hero-label" id="compareHeroLabel">今日跑赢上证指数</div>
+                <div class="compare-hero-value" id="compareHeroValue">-</div>
+              </div>
+              <div class="compare-bars">
+                <div class="compare-bar-row">
+                  <span class="bar-label">我</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" id="myBar"></div>
+                  </div>
+                  <span class="bar-value" id="myValue">-</span>
+                </div>
+                <div class="compare-bar-row">
+                  <span class="bar-label">上证</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" id="shBar"></div>
+                  </div>
+                  <span class="bar-value" id="shValue">-</span>
+                </div>
+                <div class="compare-bar-row">
+                  <span class="bar-label">深证</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" id="szBar"></div>
+                  </div>
+                  <span class="bar-value" id="szValue">-</span>
+                </div>
+                <div class="compare-bar-row">
+                  <span class="bar-label">创业</span>
+                  <div class="bar-track">
+                    <div class="bar-fill" id="cyBar"></div>
+                  </div>
+                  <span class="bar-value" id="cyValue">-</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
           <article class="panel effect-panel">
             <div class="panel-header">
               <h2 class="panel-title" id="effectTitle">AI 助理状态</h2>
@@ -1247,13 +1497,40 @@
           <div class="panel-header">
             <h2 class="panel-title">历史趋势</h2>
             <div class="history-controls">
-              <button class="day-btn" data-days="7" type="button">7天</button>
-              <button class="day-btn active" data-days="30" type="button">30天</button>
-              <button class="day-btn" data-days="90" type="button">90天</button>
+              <button class="history-period-btn active" data-granularity="day" type="button">日</button>
+              <button class="history-period-btn" data-granularity="week" type="button">周</button>
+              <button class="history-period-btn" data-granularity="month" type="button">月</button>
+              <button class="history-period-btn" data-granularity="year" type="button">年</button>
+              
+              <span class="control-separator">|</span>
+              
+              <button class="pnl-mode-btn active" data-mode="amt" type="button">金额</button>
+              <button class="pnl-mode-btn" data-mode="pct" type="button">收益率</button>
+
+              <span class="control-separator">|</span>
+
+              <button class="history-view-btn active" data-view="calendar" type="button">日历</button>
+              <button class="history-view-btn" data-view="bar" type="button">柱状图</button>
             </div>
           </div>
-          <div class="chart-container">
-            <canvas id="historyChart"></canvas>
+          <div class="history-visuals">
+            <div class="chart-container" id="historyChartView" hidden>
+              <canvas id="historyChart"></canvas>
+            </div>
+            <div class="income-calendar" id="incomeCalendarView" aria-label="收益日历">
+              <div class="calendar-header">
+                <h3 class="calendar-title">收益日历</h3>
+                <div class="calendar-legend">
+                  <span><i class="legend-dot gain"></i>盈利</span>
+                  <span><i class="legend-dot loss"></i>亏损</span>
+                </div>
+                <div class="calendar-summary" id="calendarSummary">加载中...</div>
+              </div>
+              <div class="calendar-weekdays" aria-hidden="true">
+                <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+              </div>
+              <div class="calendar-grid" id="incomeCalendar"></div>
+            </div>
           </div>
         </section>
       </div>
@@ -1468,6 +1745,13 @@
       return `${Number(value).toFixed(2)}%`;
     }
 
+    function formatDayPercent(value) {
+      const num = typeof value === 'string' ? toNum(value) : Number(value);
+      const factor = 1000;
+      const truncated = Math.trunc(num * factor) / factor;
+      return `${truncated.toFixed(3)}%`;
+    }
+
     function toNum(str) {
       if (!str || str === '-') return 0;
       return parseFloat(String(str).replace(/[%,]/g, '')) || 0;
@@ -1489,16 +1773,17 @@
     }
 
     // ── 动画化工具 ───────────────────────────────────────────
-    function animateNumericKpi(elementId, targetVal, startVal = 0, isPercent = false, prefix = '') {
+    function animateNumericKpi(elementId, targetVal, startVal = 0, isPercent = false, prefix = '', isDayPercent = false) {
       const el = document.getElementById(elementId);
       if (!el) return;
+      const formatFn = isPercent ? (isDayPercent ? formatDayPercent : formatPercent) : moneyFormatter.format.bind(moneyFormatter);
       if (typeof gsap === 'undefined') {
-        const valStr = isPercent ? formatPercent(targetVal) : moneyFormatter.format(targetVal);
+        const valStr = formatFn(targetVal);
         el.textContent = prefix + valStr;
         return;
       }
       if (Math.abs(targetVal - startVal) < 0.001 && targetVal !== 0 && startVal !== 0) {
-        const valStr = isPercent ? formatPercent(targetVal) : moneyFormatter.format(targetVal);
+        const valStr = formatFn(targetVal);
         el.textContent = prefix + valStr;
         return;
       }
@@ -1509,7 +1794,7 @@
         ease: "power2.out",
         overwrite: "auto",
         onUpdate: () => {
-          const valStr = isPercent ? formatPercent(obj.value) : moneyFormatter.format(obj.value);
+          const valStr = formatFn(obj.value);
           el.textContent = prefix + valStr;
         }
       });
@@ -1522,7 +1807,14 @@
       filter: 'all',
       search: '',
       sort: 'weight-desc',
-      historyDays: 30,
+      historyDays: 365,
+      historyGranularity: 'day',
+      historyPnlMode: 'amt',
+      historyViewMode: 'calendar',
+      historyData: null,
+      comparePeriod: 'day',
+      indicesMonthChange: null,
+      indicesLive: [],
       hideValues: false,
       effectMode: 'daily',
       weekModeInitialized: false,
@@ -1549,6 +1841,14 @@
         if (!resp.ok) throw new Error(`API ${resp.status}`);
         const data = await resp.json();
         const indices = data.indices || [];
+        
+        // 缓存数据
+        state.indicesLive = indices;
+        state.indicesMonthChange = data.month_change || null;
+        
+        // 渲染对比大盘卡片
+        renderComparePanel();
+
         if (indices.length === 0) {
           indexBar.innerHTML = '';
           return;
@@ -1581,6 +1881,77 @@
       }
     }
 
+    // ── 渲染跑赢大盘对比卡片 ──────────────────────────────────────────
+    function renderComparePanel() {
+      const live = state.indicesLive || [];
+      const monthChange = state.indicesMonthChange || {};
+      const isDay = state.comparePeriod === 'day';
+
+      // 1. 获取“我”的收益率
+      let myVal = 0.0;
+      if (isDay) {
+        myVal = state.summary ? toNum(state.summary.total_day_pct) : 0;
+      } else {
+        myVal = state.summary ? toNum(state.summary.month_pnl_pct) : 0;
+      }
+
+      // 2. 获取大盘三指数收益率
+      const getLivePct = sym => {
+        const found = live.find(x => x.symbol === sym);
+        return found ? found.changePct : 0.0;
+      };
+      
+      const shVal = isDay ? getLivePct('sh000001') : (monthChange['sh000001'] ?? 0.0);
+      const szVal = isDay ? getLivePct('sz399001') : (monthChange['sz399001'] ?? 0.0);
+      const cyVal = isDay ? getLivePct('sz399006') : (monthChange['sz399006'] ?? 0.0);
+
+      // 3. 计算跑赢幅度 (对比上证)
+      const diff = myVal - shVal;
+      const sign = diff >= 0 ? '+' : '';
+      const heroValEl = document.getElementById('compareHeroValue');
+      const heroLabelEl = document.getElementById('compareHeroLabel');
+
+      if (heroLabelEl) {
+        heroLabelEl.textContent = isDay ? '今日跑赢上证指数' : '本月跑赢上证指数';
+      }
+      if (heroValEl) {
+        heroValEl.textContent = `${sign}${diff.toFixed(3)}%`;
+        heroValEl.className = `compare-hero-value ${diff >= 0 ? 'positive' : 'negative'}`;
+      }
+
+      // 4. 计算对称双向条形图进度条宽度
+      const vals = [myVal, shVal, szVal, cyVal];
+      const maxAbs = Math.max(...vals.map(Math.abs), 1.0); // 确定最大绝对值上限
+
+      const updateBar = (barId, valId, val) => {
+        const bar = document.getElementById(barId);
+        const valText = document.getElementById(valId);
+        if (!bar || !valText) return;
+
+        const ratio = (val / maxAbs) * 100; // 范围 [-100, 100]
+        const width = Math.abs(ratio) / 2; // 正中 0 点，最大占 50% 宽度
+
+        if (ratio >= 0) {
+          bar.style.left = '50%';
+          bar.style.width = `${width}%`;
+          bar.className = 'bar-fill positive';
+        } else {
+          bar.style.left = `${50 - width}%`;
+          bar.style.width = `${width}%`;
+          bar.className = 'bar-fill negative';
+        }
+
+        const vSign = val >= 0 ? '+' : '';
+        valText.textContent = `${vSign}${val.toFixed(2)}%`;
+        valText.className = `bar-value ${val >= 0 ? 'positive' : 'negative'}`;
+      };
+
+      updateBar('myBar', 'myValue', myVal);
+      updateBar('shBar', 'shValue', shVal);
+      updateBar('szBar', 'szValue', szVal);
+      updateBar('cyBar', 'cyValue', cyVal);
+    }
+
     async function loadLatest(isSilent = false) {
       const resp = await fetch('/api/holdings/latest');
       if (!resp.ok) throw new Error(`API ${resp.status}`);
@@ -1609,11 +1980,12 @@
       render(isSilent);
     }
 
-    async function loadHistory(days) {
+    async function loadHistory(days = 365) {
       const resp = await fetch(`/api/holdings/history?days=${days}`);
       if (!resp.ok) return;
       const data = await resp.json();
-      renderHistoryChart(data.history || []);
+      state.historyData = data.history || [];
+      renderHistoryChart(state.historyData);
     }
 
     // ── KPI 渲染 ──────────────────────────────────────────────
@@ -1644,7 +2016,7 @@
         const dayEl = document.getElementById('dayPnl');
         dayEl.textContent = '¥****';
         dayEl.className   = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
-        document.getElementById('dayPnlRate').textContent = `相对昨收 ${formatPercent(totalDayRate)}`;
+        document.getElementById('dayPnlRate').textContent = `相对昨收 ${formatDayPercent(totalDayRate)}`;
 
         const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
         const monthPnlRate = s ? toNum(s.month_pnl_pct) : 0;
@@ -1667,7 +2039,7 @@
         const dayEl = document.getElementById('dayPnl');
         dayEl.textContent = moneyFormatter.format(totalDayPnl);
         dayEl.className   = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
-        document.getElementById('dayPnlRate').textContent = `相对昨收 ${formatPercent(totalDayRate)}`;
+        document.getElementById('dayPnlRate').textContent = `相对昨收 ${formatDayPercent(totalDayRate)}`;
 
         const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
         const monthPnlRate = s ? toNum(s.month_pnl_pct) : 0;
@@ -1696,7 +2068,7 @@
         const dayEl = document.getElementById('dayPnl');
         dayEl.className = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
         animateNumericKpi('dayPnl', totalDayPnl, prev.dayPnl);
-        animateNumericKpi('dayPnlRate', totalDayRate, prev.dayPnlRate, true, '相对昨收 ');
+        animateNumericKpi('dayPnlRate', totalDayRate, prev.dayPnlRate, true, '相对昨收 ', true);
 
         const monthPnl     = s ? (s.month_pnl ?? 0) : 0;
         const monthPnlRate = s ? toNum(s.month_pnl_pct) : 0;
@@ -1735,6 +2107,7 @@
       };
 
       renderEffect(totalRate, totalDayPnl, s);
+      renderComparePanel();
     }
 
     // ── AI 助理效果 ───────────────────────────────────────────
@@ -1869,43 +2242,167 @@
     // ── 历史趋势图渲染 ────────────────────────────────────────
     let historyChartInstance = null;
 
+    function weekStartKey(dateText) {
+      const date = new Date(`${dateText}T00:00:00+08:00`);
+      date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+      return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+    }
+
+    function renderIncomeCalendar(history) {
+      const calendar = document.getElementById('incomeCalendar');
+      const summary = document.getElementById('calendarSummary');
+      if (!calendar || !summary) return;
+      calendar.innerHTML = '';
+      if (!history.length) {
+        summary.textContent = '暂无收益数据';
+        return;
+      }
+
+      const isAmt = state.historyPnlMode !== 'pct';
+      const rows = [...history].sort((a, b) => a.date.localeCompare(b.date));
+      const granularity = state.historyGranularity;
+      const weekdayEl = document.querySelector('.calendar-weekdays');
+      if (weekdayEl) weekdayEl.hidden = granularity !== 'day';
+
+      // 周模式显示最近一个月的周汇总，不再铺开周一到周日。
+      if (granularity === 'week') {
+        const monthKey = rows.at(-1).date.slice(0, 7);
+        const periodRows = new Map();
+        rows.filter(row => row.date.slice(0, 7) === monthKey).forEach(row => {
+          const key = weekStartKey(row.date);
+          const current = periodRows.get(key) || { total_day_pnl: 0, total_day_pct_factor: 1 };
+          current.total_day_pnl += toNum(row.total_day_pnl);
+          current.total_day_pct_factor *= 1 + toNum(row.total_day_pct) / 100;
+          periodRows.set(key, current);
+        });
+        const cells = [...periodRows.entries()].map(([key, row], index) => {
+          const value = isAmt ? row.total_day_pnl : (row.total_day_pct_factor - 1) * 100;
+          const display = isAmt
+            ? `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('zh-CN')}`
+            : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+          const status = value > 0 ? 'gain' : value < 0 ? 'loss' : '';
+          return `<div class="calendar-cell ${status}" title="${key} ${isAmt ? `盈亏 ${display} 元` : `收益率 ${display}`}" ><span class="calendar-date">第${index + 1}周</span><span class="calendar-value">${display}</span></div>`;
+        });
+        calendar.innerHTML = cells.join('');
+        summary.textContent = `${monthKey.slice(0, 4)}年${Number(monthKey.slice(5, 7))}月`;
+        return;
+      }
+
+      // 月模式显示最近一年的月汇总，不再显示每日日期。
+      if (granularity === 'month' || granularity === 'year') {
+        const yearKey = rows.at(-1).date.slice(0, 4);
+        const periodRows = new Map();
+        rows.filter(row => row.date.slice(0, 4) === yearKey).forEach(row => {
+          const key = granularity === 'year' ? row.date.slice(0, 4) : row.date.slice(0, 7);
+          const current = periodRows.get(key) || { total_day_pnl: 0, total_day_pct_factor: 1 };
+          current.total_day_pnl += toNum(row.total_day_pnl);
+          current.total_day_pct_factor *= 1 + toNum(row.total_day_pct) / 100;
+          periodRows.set(key, current);
+        });
+        const cells = [...periodRows.entries()].map(([key, row]) => {
+          const value = isAmt ? row.total_day_pnl : (row.total_day_pct_factor - 1) * 100;
+          const display = isAmt
+            ? `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('zh-CN')}`
+            : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+          const status = value > 0 ? 'gain' : value < 0 ? 'loss' : '';
+          const label = granularity === 'year' ? key : `${Number(key.slice(5, 7))}月`;
+          return `<div class="calendar-cell ${status}" title="${key} ${isAmt ? `盈亏 ${display} 元` : `收益率 ${display}`}" ><span class="calendar-date">${label}</span><span class="calendar-value">${display}</span></div>`;
+        });
+        calendar.innerHTML = cells.join('');
+        summary.textContent = `${yearKey}年`;
+        return;
+      }
+
+      const byDate = new Map(rows.map(row => [row.date, row]));
+      const first = new Date(`${rows[0].date}T00:00:00+08:00`);
+      const last = new Date(`${rows.at(-1).date}T00:00:00+08:00`);
+      const firstMonday = new Date(first);
+      firstMonday.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+      const lastSunday = new Date(last);
+      lastSunday.setDate(last.getDate() + (7 - last.getDay()) % 7);
+
+      const cells = [];
+      for (const cursor = new Date(firstMonday); cursor <= lastSunday; cursor.setDate(cursor.getDate() + 1)) {
+        const date = [cursor.getFullYear(), String(cursor.getMonth() + 1).padStart(2, '0'), String(cursor.getDate()).padStart(2, '0')].join('-');
+        const row = byDate.get(date);
+        if (!row) {
+          cells.push('<div class="calendar-cell empty" aria-hidden="true"></div>');
+          continue;
+        }
+        const value = isAmt ? toNum(row.total_day_pnl) : toNum(row.total_day_pct);
+        const display = isAmt
+          ? `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('zh-CN')}`
+          : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+        const status = value > 0 ? 'gain' : value < 0 ? 'loss' : '';
+        cells.push(`<div class="calendar-cell ${status}" title="${date} ${isAmt ? `当日盈亏 ${display} 元` : `当日收益率 ${display}`}"><span class="calendar-date">${cursor.getDate()}</span><span class="calendar-value">${display}</span></div>`);
+      }
+      calendar.innerHTML = cells.join('');
+      summary.textContent = `${rows[0].date.slice(0, 4)}年${Number(rows[0].date.slice(5, 7))}月`;
+    }
+
     function renderHistoryChart(history) {
-      const labels  = history.map(r => r.date);
-      const markets = history.map(r => r.total_market);
-      const pnls    = history.map(r => r.total_pnl);
+      const isAmt = state.historyPnlMode !== 'pct';
+      const granularity = state.historyGranularity;
+      // 日模式默认只展示最近一个自然月，避免全年日期挤在同一张图和日历里。
+      const latestDate = history.at(-1)?.date || '';
+      const displayHistory = granularity === 'day' && latestDate
+        ? history.filter(row => row.date.slice(0, 7) === latestDate.slice(0, 7))
+        : granularity === 'week' && latestDate
+          ? history.filter(row => weekStartKey(row.date) === weekStartKey(latestDate))
+          : history;
+      const calendarHistory = granularity === 'week' && latestDate
+        ? history.filter(row => row.date.slice(0, 7) === latestDate.slice(0, 7))
+        : displayHistory;
+      const grouped = new Map();
+
+      // 日视图使用每日盈亏；月/年视图按周期汇总每日盈亏，不使用累计盈亏字段。
+      displayHistory.forEach(row => {
+        const key = granularity === 'year' ? row.date.slice(0, 4)
+          : granularity === 'month' ? row.date.slice(0, 7)
+          : granularity === 'week' ? weekStartKey(row.date)
+          : row.date;
+        const current = grouped.get(key) || {
+          ...row,
+          total_day_pnl: 0,
+          total_day_pct_factor: 1,
+        };
+        current.total_day_pnl += toNum(row.total_day_pnl);
+        current.total_day_pct_factor *= 1 + toNum(row.total_day_pct) / 100;
+        grouped.set(key, current);
+      });
+      const points = [...grouped.entries()];
+      const labels = points.map(([key]) => key);
+      const values = points.map(([, row]) => isAmt
+        ? row.total_day_pnl
+        : (row.total_day_pct_factor - 1) * 100);
+
+      renderIncomeCalendar(calendarHistory);
+
+      const chartView = document.getElementById('historyChartView');
+      const calendarView = document.getElementById('incomeCalendarView');
+      if (chartView) chartView.hidden = state.historyViewMode !== 'bar';
+      if (calendarView) calendarView.hidden = state.historyViewMode !== 'calendar';
 
       const ctx = document.getElementById('historyChart').getContext('2d');
 
       if (historyChartInstance) historyChartInstance.destroy();
 
       historyChartInstance = new Chart(ctx, {
-        type: 'line',
+        type: 'bar',
         data: {
           labels,
           datasets: [
             {
-              label: '总市值（元）',
-              data: markets,
-              borderColor: '#00f0ff',
-              backgroundColor: 'rgba(0, 240, 255, 0.07)',
-              borderWidth: 2,
-              pointRadius: 3,
-              pointHoverRadius: 5,
-              fill: true,
-              tension: 0.35,
+              label: isAmt ? '当期盈亏（元）' : '当期收益率',
+              data: values,
+              borderColor: isAmt ? '#00f0ff' : '#10b981',
+              backgroundColor: values.map(value => value >= 0
+                ? 'rgba(244, 63, 94, 0.72)'
+                : 'rgba(16, 185, 129, 0.72)'),
+              borderWidth: 1,
+              borderRadius: 4,
+              maxBarThickness: 28,
               yAxisID: 'y',
-            },
-            {
-              label: '累计盈亏（元）',
-              data: pnls,
-              borderColor: '#f43f5e',
-              backgroundColor: 'rgba(244, 63, 94, 0.07)',
-              borderWidth: 2,
-              pointRadius: 3,
-              pointHoverRadius: 5,
-              fill: true,
-              tension: 0.35,
-              yAxisID: 'y1',
             },
           ],
         },
@@ -1926,7 +2423,9 @@
               callbacks: {
                 label: ctx => {
                   const val = ctx.parsed.y;
-                  return ` ${ctx.dataset.label}: ¥${val.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
+                  return isAmt
+                    ? ` ${ctx.dataset.label}: ¥${val.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`
+                    : ` ${ctx.dataset.label}: ${(val).toFixed(3)}%`;
                 },
               },
             },
@@ -1940,18 +2439,11 @@
               position: 'left',
               grid: { color: 'rgba(51,65,85,0.2)' },
               ticks: {
-                color: '#00f0ff',
+                color: isAmt ? '#00f0ff' : '#10b981',
                 font: { size: 11 },
-                callback: v => '¥' + (v / 10000).toFixed(1) + 'w',
-              },
-            },
-            y1: {
-              position: 'right',
-              grid: { drawOnChartArea: false },
-              ticks: {
-                color: '#f43f5e',
-                font: { size: 11 },
-                callback: v => (v >= 0 ? '+' : '') + (v / 10000).toFixed(1) + 'w',
+                callback: v => isAmt
+                  ? (v >= 0 ? '+' : '') + (v / 10000).toFixed(1) + 'w'
+                  : (v >= 0 ? '+' : '') + v.toFixed(2) + '%',
               },
             },
           },
@@ -1984,10 +2476,10 @@
       const empty = document.getElementById('emptyState');
       empty.hidden = rows.length > 0;
       tbody.innerHTML = rows.map(x => `
-        <tr>
+        <tr class="${x.code.endsWith('.HK') ? 'portfolio-hk-row' : ''}">
           <td>
             <div class="name-cell">
-              <strong>${escapeHtml(x.name)}</strong>
+              <strong>${escapeHtml(x.name)}${x.code.endsWith('.HK') ? '<span class="portfolio-market-badge">港股</span>' : ''}</strong>
               <span class="code">${escapeHtml(x.code)}</span>
             </div>
           </td>
@@ -1995,7 +2487,7 @@
           <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
           <td>${state.hideValues ? '****' : (x.costPrice === '-' ? '-' : priceFormatter.format(toNum(x.costPrice)))}</td>
           <td>${state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : priceFormatter.format(toNum(x.currentPrice)))}</td>
-          <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatPercent(x.dayPnlRate)}</td>
+          <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatDayPercent(x.dayPnlRate)}</td>
           <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
           <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
           <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
@@ -2037,13 +2529,51 @@
       });
     });
 
-    // 历史天数切换
-    document.querySelectorAll('.day-btn').forEach(btn => {
+    // 历史粒度切换（日 / 月 / 年）
+    document.querySelectorAll('.history-period-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.history-period-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        state.historyDays = parseInt(btn.dataset.days);
-        loadHistory(state.historyDays);
+        state.historyGranularity = btn.dataset.granularity;
+        if (state.historyData) {
+          renderHistoryChart(state.historyData);
+        } else {
+          loadHistory(state.historyDays);
+        }
+      });
+    });
+
+    // 盈亏模式切换 (金额 / 百分比)
+    document.querySelectorAll('.pnl-mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.pnl-mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.historyPnlMode = btn.dataset.mode;
+        if (state.historyData) {
+          renderHistoryChart(state.historyData);
+        } else {
+          loadHistory(state.historyDays);
+        }
+      });
+    });
+
+    // 历史展示方式切换（日历 / 柱状图）
+    document.querySelectorAll('.history-view-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.history-view-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.historyViewMode = btn.dataset.view;
+        if (state.historyData) renderHistoryChart(state.historyData);
+      });
+    });
+
+    // 对比时段切换 (当日 / 本月)
+    document.querySelectorAll('.compare-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.compare-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.comparePeriod = btn.dataset.period;
+        renderComparePanel();
       });
     });
 
@@ -2119,7 +2649,7 @@
         let dayPnlStr = '—';
         let dayClass = '';
         if (holding) {
-          dayPnlStr = formatPercent(holding.dayPnlRate);
+          dayPnlStr = formatDayPercent(holding.dayPnlRate);
           dayClass = holding.dayPnlRate >= 0 ? 'positive' : 'negative';
         }
 
