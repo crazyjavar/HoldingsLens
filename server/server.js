@@ -564,15 +564,19 @@ app.get('/api/holdings/latest', (c) => {
   return c.json({ date, holdings, summary: extendedSummary });
 });
 
-/** GET /api/holdings/history?days=30 — 过去 N 天每日汇总（用于趋势图）*/
+/** GET /api/holdings/history?days=30|all — 历史每日汇总（用于趋势图）*/
 app.get('/api/holdings/history', (c) => {
-  const days = Math.min(parseInt(c.req.query('days') ?? '30', 10), 365);
-  const rows = db.prepare(`
+  const requestedDays = c.req.query('days') ?? '30';
+  const selectSql = `
     SELECT date, total_market, total_day_pnl, total_day_pct, total_pnl, total_pnl_pct
     FROM daily_summary
     ORDER BY date DESC
-    LIMIT ?
-  `).all(days);
+  `;
+  const rows = requestedDays === 'all'
+    ? db.prepare(selectSql).all()
+    : db.prepare(`${selectSql} LIMIT ?`).all(
+        Math.min(Math.max(parseInt(requestedDays, 10) || 30, 1), 5000)
+      );
   return c.json({ history: [...rows].reverse() }); // 升序返回（图表用）
 });
 

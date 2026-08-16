@@ -6,7 +6,7 @@
   <title>持仓明细展示</title>
   <meta name="description" content="个人持仓明细实时展示，含历史趋势、盈亏分析、仓位结构">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
@@ -698,90 +698,52 @@
 
     .history-controls {
       display: flex;
-      gap: 8px;
-    }
-
-    .history-period-btn {
-      height: 28px;
-      padding: 0 12px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--muted);
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .history-period-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-    .history-period-btn:hover:not(.active) { border-color: var(--cyan); color: var(--cyan); }
-
-    .pnl-mode-btn {
-      height: 28px;
-      padding: 0 12px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--muted);
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .pnl-mode-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-    .pnl-mode-btn:hover:not(.active) { border-color: var(--cyan); color: var(--cyan); }
-
-    .history-view-btn {
-      height: 28px;
-      padding: 0 12px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--muted);
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .history-view-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-    .history-view-btn:hover:not(.active) { border-color: var(--cyan); color: var(--cyan); }
-
-    .control-separator {
-      color: var(--line);
-      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
       align-items: center;
-      user-select: none;
-      font-size: 14px;
-      padding: 0 4px;
     }
 
     .chart-container {
       position: relative;
-      padding: 16px 20px 20px;
-      height: 260px;
+      padding: 10px 20px 16px;
+      height: 320px;
     }
 
-    .history-visuals { padding-bottom: 18px; }
-    .income-calendar { padding: 0 20px 20px; }
-    .calendar-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .history-visuals { padding-bottom: 4px; }
+    .income-calendar { padding: 0 20px 10px; height: 320px; }
+    .calendar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      padding-right: 8px;
+    }
     .calendar-title { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; }
-    .calendar-summary { color: var(--muted); font-size: 12px; }
-    .calendar-weekdays, .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
-    .calendar-weekdays { margin-bottom: 6px; color: var(--muted); font-size: 11px; text-align: center; }
-    .calendar-cell { min-height: 48px; padding: 6px 5px; border: 1px solid rgba(51,65,85,0.35); border-radius: 7px; background: rgba(15,23,42,0.52); }
-    .calendar-cell.empty { border-color: transparent; background: transparent; }
-    .calendar-cell.gain { background: rgba(244,63,94,0.16); border-color: rgba(244,63,94,0.32); }
-    .calendar-cell.loss { background: rgba(16,185,129,0.16); border-color: rgba(16,185,129,0.32); }
-    .calendar-date { display: block; color: var(--muted); font-size: 10px; line-height: 1; }
-    .calendar-value { display: block; margin-top: 7px; color: var(--ink); font-family: var(--font-tech); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .calendar-cell.gain .calendar-value { color: #fb7185; }
-    .calendar-cell.loss .calendar-value { color: #34d399; }
-    .calendar-legend { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
+    .calendar-summary { color: var(--muted); font-size: 12px; margin-left: auto; }
+    .calendar-legend {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
     .calendar-legend span { display: inline-flex; align-items: center; gap: 4px; }
     .legend-dot { width: 9px; height: 9px; display: inline-block; border-radius: 3px; }
     .legend-dot.gain { background: rgba(244,63,94,0.75); }
     .legend-dot.loss { background: rgba(16,185,129,0.75); }
+    #incomeCalendar, #historyChart {
+      width: 100%;
+      height: 100%;
+      border-radius: 8px;
+    }
     @media (max-width: 700px) {
-      .history-controls { flex-wrap: wrap; }
-      .calendar-cell { min-height: 42px; padding: 5px 3px; }
-      .calendar-value { font-size: 10px; }
+      .history-controls { gap: 8px; }
+      .chart-container { height: 260px; padding: 8px 12px 12px; }
+      .income-calendar { padding: 0 12px 12px; height: 260px; }
+      .calendar-header { flex-wrap: wrap; gap: 8px; }
+      .calendar-summary { margin-left: 0; width: 100%; }
     }
 
     /* ── 仓位/盈亏 Bar ───────────────── */
@@ -828,17 +790,31 @@
     .search { width: min(320px, 56vw); }
 
     .segmented {
-      display: inline-grid;
-      grid-template-columns: repeat(3, 1fr);
+      display: inline-flex;
       border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
       background: rgba(15,23,42,0.6);
     }
-    .segmented button { height: 36px; border: 0; border-right: 1px solid var(--line); padding: 0 13px; background: transparent; color: var(--muted); cursor: pointer; transition: background-color 0.2s, color 0.2s; }
+    .segmented button {
+      flex: 1 1 auto;
+      min-width: 48px;
+      height: 30px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      padding: 0 14px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background-color 0.2s, color 0.2s;
+      white-space: nowrap;
+    }
     .segmented button:last-child { border-right: 0; }
     .segmented button.active { background: var(--blue); color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.3); }
     .segmented button:hover:not(.active) { background: rgba(255,255,255,0.05); color: var(--text); }
+
+    .history-controls .segmented button { height: 28px; padding: 0 12px; font-size: 11px; }
 
     .table-wrap { overflow-x: auto; }
 
@@ -1497,25 +1473,25 @@
           <div class="panel-header">
             <h2 class="panel-title">历史趋势</h2>
             <div class="history-controls">
-              <button class="history-period-btn active" data-granularity="day" type="button">日</button>
-              <button class="history-period-btn" data-granularity="week" type="button">周</button>
-              <button class="history-period-btn" data-granularity="month" type="button">月</button>
-              <button class="history-period-btn" data-granularity="year" type="button">年</button>
-              
-              <span class="control-separator">|</span>
-              
-              <button class="pnl-mode-btn active" data-mode="amt" type="button">金额</button>
-              <button class="pnl-mode-btn" data-mode="pct" type="button">收益率</button>
-
-              <span class="control-separator">|</span>
-
-              <button class="history-view-btn active" data-view="calendar" type="button">日历</button>
-              <button class="history-view-btn" data-view="bar" type="button">柱状图</button>
+              <div class="segmented" aria-label="时间粒度">
+                <button type="button" class="active" data-granularity="day">日</button>
+                <button type="button" data-granularity="week">周</button>
+                <button type="button" data-granularity="month">月</button>
+                <button type="button" data-granularity="year">年</button>
+              </div>
+              <div class="segmented" aria-label="展示模式">
+                <button type="button" class="active" data-mode="amt">金额</button>
+                <button type="button" data-mode="pct">收益率</button>
+              </div>
+              <div class="segmented" aria-label="视图">
+                <button type="button" class="active" data-view="calendar">日历</button>
+                <button type="button" data-view="bar">柱状图</button>
+              </div>
             </div>
           </div>
           <div class="history-visuals">
             <div class="chart-container" id="historyChartView" hidden>
-              <canvas id="historyChart"></canvas>
+              <div id="historyChart"></div>
             </div>
             <div class="income-calendar" id="incomeCalendarView" aria-label="收益日历">
               <div class="calendar-header">
@@ -1526,10 +1502,7 @@
                 </div>
                 <div class="calendar-summary" id="calendarSummary">加载中...</div>
               </div>
-              <div class="calendar-weekdays" aria-hidden="true">
-                <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
-              </div>
-              <div class="calendar-grid" id="incomeCalendar"></div>
+              <div id="incomeCalendar"></div>
             </div>
           </div>
         </section>
@@ -1807,7 +1780,8 @@
       filter: 'all',
       search: '',
       sort: 'weight-desc',
-      historyDays: 365,
+      // 使用足够大的数值保持与旧版后端兼容：旧版会截断为 365，新版可返回完整多年数据。
+      historyDays: 5000,
       historyGranularity: 'day',
       historyPnlMode: 'amt',
       historyViewMode: 'calendar',
@@ -1980,7 +1954,7 @@
       render(isSilent);
     }
 
-    async function loadHistory(days = 365) {
+    async function loadHistory(days = 5000) {
       const resp = await fetch(`/api/holdings/history?days=${days}`);
       if (!resp.ok) return;
       const data = await resp.json();
@@ -2242,17 +2216,57 @@
     // ── 历史趋势图渲染 ────────────────────────────────────────
     let historyChartInstance = null;
 
+    // 收益日历只处理 YYYY-MM-DD。统一使用 UTC 日历坐标，
+    // 避免浏览器所在时区将东八区零点解析成前一天。
+    function ymdToUtcDate(dateText) {
+      const [year, month, day] = String(dateText).split('-').map(Number);
+      return new Date(Date.UTC(year, month - 1, day));
+    }
+
+    function utcDateToYmd(date) {
+      return [
+        date.getUTCFullYear(),
+        String(date.getUTCMonth() + 1).padStart(2, '0'),
+        String(date.getUTCDate()).padStart(2, '0'),
+      ].join('-');
+    }
+
+    function addCalendarDays(dateText, days) {
+      const date = ymdToUtcDate(dateText);
+      date.setUTCDate(date.getUTCDate() + days);
+      return utcDateToYmd(date);
+    }
+
+    function mondayIndex(dateText) {
+      return (ymdToUtcDate(dateText).getUTCDay() + 6) % 7;
+    }
+
     function weekStartKey(dateText) {
-      const date = new Date(`${dateText}T00:00:00+08:00`);
-      date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-      return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+      return addCalendarDays(dateText, -mondayIndex(dateText));
+    }
+
+    function monthEndKey(monthKey) {
+      const [year, month] = monthKey.split('-').map(Number);
+      return utcDateToYmd(new Date(Date.UTC(year, month, 0)));
+    }
+
+    function historyValueDisplay(value, isAmt) {
+      if (isAmt && state.hideValues) return '¥****';
+      return isAmt
+        ? `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('zh-CN')}`
+        : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+    }
+
+    function historyValueTitle(label, value, isAmt, prefix = '盈亏') {
+      if (isAmt && state.hideValues) return `${label} ${prefix} ¥****`;
+      const display = historyValueDisplay(value, isAmt);
+      return `${label} ${isAmt ? `${prefix} ${display} 元` : `收益率 ${display}`}`;
     }
 
     function renderIncomeCalendar(history) {
-      const calendar = document.getElementById('incomeCalendar');
+      const calendarDom = document.getElementById('incomeCalendar');
       const summary = document.getElementById('calendarSummary');
-      if (!calendar || !summary) return;
-      calendar.innerHTML = '';
+      if (!calendarDom || !summary) return;
       if (!history.length) {
         summary.textContent = '暂无收益数据';
         return;
@@ -2261,193 +2275,319 @@
       const isAmt = state.historyPnlMode !== 'pct';
       const rows = [...history].sort((a, b) => a.date.localeCompare(b.date));
       const granularity = state.historyGranularity;
-      const weekdayEl = document.querySelector('.calendar-weekdays');
-      if (weekdayEl) weekdayEl.hidden = granularity !== 'day';
 
-      // 周模式显示最近一个月的周汇总，不再铺开周一到周日。
-      if (granularity === 'week') {
-        const monthKey = rows.at(-1).date.slice(0, 7);
-        const periodRows = new Map();
-        rows.filter(row => row.date.slice(0, 7) === monthKey).forEach(row => {
-          const key = weekStartKey(row.date);
-          const current = periodRows.get(key) || { total_day_pnl: 0, total_day_pct_factor: 1 };
-          current.total_day_pnl += toNum(row.total_day_pnl);
-          current.total_day_pct_factor *= 1 + toNum(row.total_day_pct) / 100;
-          periodRows.set(key, current);
-        });
-        const cells = [...periodRows.entries()].map(([key, row], index) => {
-          const value = isAmt ? row.total_day_pnl : (row.total_day_pct_factor - 1) * 100;
-          const display = isAmt
-            ? `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('zh-CN')}`
-            : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-          const status = value > 0 ? 'gain' : value < 0 ? 'loss' : '';
-          return `<div class="calendar-cell ${status}" title="${key} ${isAmt ? `盈亏 ${display} 元` : `收益率 ${display}`}" ><span class="calendar-date">第${index + 1}周</span><span class="calendar-value">${display}</span></div>`;
-        });
-        calendar.innerHTML = cells.join('');
-        summary.textContent = `${monthKey.slice(0, 4)}年${Number(monthKey.slice(5, 7))}月`;
-        return;
+      if (historyChartInstance) {
+        historyChartInstance.dispose();
+        historyChartInstance = null;
       }
 
-      // 月模式显示最近一年的月汇总，不再显示每日日期。
-      if (granularity === 'month' || granularity === 'year') {
-        const yearKey = rows.at(-1).date.slice(0, 4);
-        const periodRows = new Map();
-        rows.filter(row => row.date.slice(0, 4) === yearKey).forEach(row => {
-          const key = granularity === 'year' ? row.date.slice(0, 4) : row.date.slice(0, 7);
-          const current = periodRows.get(key) || { total_day_pnl: 0, total_day_pct_factor: 1 };
-          current.total_day_pnl += toNum(row.total_day_pnl);
-          current.total_day_pct_factor *= 1 + toNum(row.total_day_pct) / 100;
-          periodRows.set(key, current);
-        });
-        const cells = [...periodRows.entries()].map(([key, row]) => {
-          const value = isAmt ? row.total_day_pnl : (row.total_day_pct_factor - 1) * 100;
-          const display = isAmt
-            ? `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('zh-CN')}`
-            : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-          const status = value > 0 ? 'gain' : value < 0 ? 'loss' : '';
-          const label = granularity === 'year' ? key : `${Number(key.slice(5, 7))}月`;
-          return `<div class="calendar-cell ${status}" title="${key} ${isAmt ? `盈亏 ${display} 元` : `收益率 ${display}`}" ><span class="calendar-date">${label}</span><span class="calendar-value">${display}</span></div>`;
-        });
-        calendar.innerHTML = cells.join('');
-        summary.textContent = `${yearKey}年`;
-        return;
+      historyChartInstance = echarts.init(calendarDom);
+
+      if (granularity === 'day') {
+        renderDayHeatmap(historyChartInstance, rows, isAmt, summary);
+      } else {
+        renderPeriodHeatmap(historyChartInstance, rows, isAmt, granularity, summary);
       }
+    }
 
-      const byDate = new Map(rows.map(row => [row.date, row]));
-      const first = new Date(`${rows[0].date}T00:00:00+08:00`);
-      const last = new Date(`${rows.at(-1).date}T00:00:00+08:00`);
-      const firstMonday = new Date(first);
-      firstMonday.setDate(first.getDate() - ((first.getDay() + 6) % 7));
-      const lastSunday = new Date(last);
-      lastSunday.setDate(last.getDate() + (7 - last.getDay()) % 7);
+    function renderDayHeatmap(chart, rows, isAmt, summary) {
+      const latestDate = rows.at(-1)?.date || '';
+      const firstDate = rows[0]?.date || latestDate;
+      // 默认滚动 12 个月；若总数据不足 12 个月，则从最早有数据的日期开始，避免大量空白格子。
+      const idealStart = latestDate ? addCalendarDays(latestDate, -364) : firstDate;
+      const startDate = firstDate > idealStart ? firstDate : idealStart;
+      const endDate = latestDate;
+      const windowRows = rows.filter(row => row.date >= startDate && row.date <= endDate);
 
-      const cells = [];
-      for (const cursor = new Date(firstMonday); cursor <= lastSunday; cursor.setDate(cursor.getDate() + 1)) {
-        const date = [cursor.getFullYear(), String(cursor.getMonth() + 1).padStart(2, '0'), String(cursor.getDate()).padStart(2, '0')].join('-');
-        const row = byDate.get(date);
-        if (!row) {
-          cells.push('<div class="calendar-cell empty" aria-hidden="true"></div>');
-          continue;
+      const data = windowRows.map(row => [
+        row.date,
+        isAmt ? toNum(row.total_day_pnl) : toNum(row.total_day_pct)
+      ]);
+      const values = data.map(d => d[1]);
+      const maxAbs = Math.max(...values.map(Math.abs), 0.0001);
+
+      summary.textContent = `${startDate.slice(0, 7)} — ${endDate.slice(0, 7)} 收益热力图`;
+
+      chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: 'rgba(10, 15, 30, 0.92)',
+          borderColor: 'rgba(51, 65, 85, 0.5)',
+          borderWidth: 1,
+          textStyle: { color: '#e2e8f0', fontSize: 12 },
+          extraCssText: 'backdrop-filter: blur(8px); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);',
+          formatter: params => {
+            const date = params.data[0];
+            const value = params.data[1];
+            if (isAmt && state.hideValues) return `${date}<br/>当日盈亏：¥****`;
+            const display = historyValueDisplay(value, isAmt);
+            return `${date}<br/>${isAmt ? '当日盈亏' : '收益率'}：${display}${isAmt ? ' 元' : ''}`;
+          }
+        },
+        visualMap: {
+          show: false,
+          min: -maxAbs,
+          max: maxAbs,
+          calculable: false,
+          inRange: { color: ['#10b981', '#0f172a', '#f43f5e'] }
+        },
+        calendar: {
+          top: 18,
+          left: 44,
+          right: 20,
+          bottom: 10,
+          cellSize: ['auto', 14],
+          range: startDate && endDate ? [startDate, endDate] : latestDate,
+          itemStyle: {
+            color: 'rgba(15, 23, 42, 0.6)',
+            borderColor: 'rgba(51, 65, 85, 0.35)',
+            borderWidth: 1,
+            borderRadius: 2
+          },
+          splitLine: { show: false },
+          yearLabel: { show: false },
+          monthLabel: { color: '#64748b', fontSize: 11, nameMap: 'cn' },
+          dayLabel: { color: '#64748b', fontSize: 10, firstDay: 1, nameMap: 'cn' }
+        },
+        series: {
+          type: 'heatmap',
+          coordinateSystem: 'calendar',
+          data: data,
+          itemStyle: { borderRadius: 2 }
         }
-        const value = isAmt ? toNum(row.total_day_pnl) : toNum(row.total_day_pct);
-        const display = isAmt
-          ? `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('zh-CN')}`
-          : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-        const status = value > 0 ? 'gain' : value < 0 ? 'loss' : '';
-        cells.push(`<div class="calendar-cell ${status}" title="${date} ${isAmt ? `当日盈亏 ${display} 元` : `当日收益率 ${display}`}"><span class="calendar-date">${cursor.getDate()}</span><span class="calendar-value">${display}</span></div>`);
-      }
-      calendar.innerHTML = cells.join('');
-      summary.textContent = `${rows[0].date.slice(0, 4)}年${Number(rows[0].date.slice(5, 7))}月`;
+      });
+    }
+
+    function renderPeriodHeatmap(chart, rows, isAmt, granularity, summary) {
+      const grouped = new Map();
+      rows.forEach(row => {
+        const key = granularity === 'year' ? row.date.slice(0, 4)
+          : granularity === 'month' ? row.date.slice(0, 7)
+          : weekStartKey(row.date);
+        const current = grouped.get(key) || { total_day_pnl: 0, total_day_pct_factor: 1 };
+        current.total_day_pnl += toNum(row.total_day_pnl);
+        current.total_day_pct_factor *= 1 + toNum(row.total_day_pct) / 100;
+        grouped.set(key, current);
+      });
+
+      const points = [...grouped.entries()].map(([key, row]) => {
+        const value = isAmt ? row.total_day_pnl : (row.total_day_pct_factor - 1) * 100;
+        const label = granularity === 'week'
+          ? `${key.slice(5)}—${addCalendarDays(key, 4).slice(5)}`
+          : granularity === 'month'
+            ? `${Number(key.slice(5, 7))}月`
+            : key;
+        return { key, label, value };
+      });
+
+      const values = points.map(p => p.value);
+      const maxAbs = Math.max(...values.map(Math.abs), 0.0001);
+      const periodText = granularity === 'week' ? '周' : granularity === 'month' ? '月' : '年';
+      summary.textContent = `${points[0]?.key || ''} — ${points.at(-1)?.key || ''} · 共${points.length}${periodText}`;
+
+      chart.setOption({
+        backgroundColor: 'transparent',
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: 'rgba(10, 15, 30, 0.92)',
+          borderColor: 'rgba(51, 65, 85, 0.5)',
+          borderWidth: 1,
+          textStyle: { color: '#e2e8f0', fontSize: 12 },
+          extraCssText: 'backdrop-filter: blur(8px); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);',
+          formatter: params => {
+            const point = points[params.data[0]];
+            if (!point) return '';
+            if (isAmt && state.hideValues) return `${point.label}<br/>盈亏：¥****`;
+            const display = historyValueDisplay(point.value, isAmt);
+            return `${point.label}<br/>${isAmt ? '盈亏' : '收益率'}：${display}${isAmt ? ' 元' : ''}`;
+          }
+        },
+        grid: { top: 10, left: 0, right: 20, bottom: 30, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: points.map((_, i) => i),
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: {
+            color: '#64748b',
+            fontSize: 11,
+            interval: 0,
+            formatter: value => points[value]?.label || ''
+          }
+        },
+        yAxis: {
+          type: 'category',
+          data: ['盈亏'],
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: { show: false },
+          splitLine: { show: false }
+        },
+        visualMap: {
+          show: false,
+          min: -maxAbs,
+          max: maxAbs,
+          inRange: { color: ['#10b981', '#0f172a', '#f43f5e'] }
+        },
+        series: {
+          type: 'heatmap',
+          data: points.map((p, i) => [i, 0, p.value]),
+          itemStyle: {
+            borderRadius: 4,
+            borderColor: 'rgba(51, 65, 85, 0.35)',
+            borderWidth: 1
+          },
+          label: {
+            show: points.length <= 24,
+            color: '#e2e8f0',
+            fontSize: 11,
+            formatter: params => {
+              if (isAmt && state.hideValues) return '****';
+              return historyValueDisplay(params.data[2], isAmt);
+            }
+          }
+        }
+      });
     }
 
     function renderHistoryChart(history) {
       const isAmt = state.historyPnlMode !== 'pct';
       const granularity = state.historyGranularity;
-      // 日模式默认只展示最近一个自然月，避免全年日期挤在同一张图和日历里。
-      const latestDate = history.at(-1)?.date || '';
-      const displayHistory = granularity === 'day' && latestDate
-        ? history.filter(row => row.date.slice(0, 7) === latestDate.slice(0, 7))
-        : granularity === 'week' && latestDate
-          ? history.filter(row => weekStartKey(row.date) === weekStartKey(latestDate))
-          : history;
-      const calendarHistory = granularity === 'week' && latestDate
-        ? history.filter(row => row.date.slice(0, 7) === latestDate.slice(0, 7))
-        : displayHistory;
-      const grouped = new Map();
+      const sortedHistory = [...history].sort((a, b) => a.date.localeCompare(b.date));
+      const latestDate = sortedHistory.at(-1)?.date || '';
 
-      // 日视图使用每日盈亏；月/年视图按周期汇总每日盈亏，不使用累计盈亏字段。
-      displayHistory.forEach(row => {
-        const key = granularity === 'year' ? row.date.slice(0, 4)
-          : granularity === 'month' ? row.date.slice(0, 7)
-          : granularity === 'week' ? weekStartKey(row.date)
-          : row.date;
-        const current = grouped.get(key) || {
-          ...row,
-          total_day_pnl: 0,
-          total_day_pct_factor: 1,
-        };
-        current.total_day_pnl += toNum(row.total_day_pnl);
-        current.total_day_pct_factor *= 1 + toNum(row.total_day_pct) / 100;
-        grouped.set(key, current);
-      });
-      const points = [...grouped.entries()];
-      const labels = points.map(([key]) => key);
-      const values = points.map(([, row]) => isAmt
-        ? row.total_day_pnl
-        : (row.total_day_pct_factor - 1) * 100);
-
-      renderIncomeCalendar(calendarHistory);
+      // 日视图日历按滚动窗口展示；柱状图保持原有切片逻辑
+      const recentWeekStart = latestDate ? weekStartKey(addCalendarDays(latestDate, -29)) : '';
+      const barHistory = granularity === 'day' && latestDate
+        ? sortedHistory.filter(row => row.date.slice(0, 7) === latestDate.slice(0, 7))
+        : granularity === 'week' && recentWeekStart
+          ? sortedHistory.filter(row => row.date >= recentWeekStart && mondayIndex(row.date) <= 4)
+          : sortedHistory;
+      const calendarHistory = sortedHistory;
 
       const chartView = document.getElementById('historyChartView');
       const calendarView = document.getElementById('incomeCalendarView');
       if (chartView) chartView.hidden = state.historyViewMode !== 'bar';
       if (calendarView) calendarView.hidden = state.historyViewMode !== 'calendar';
 
-      const ctx = document.getElementById('historyChart').getContext('2d');
+      if (historyChartInstance) {
+        historyChartInstance.dispose();
+        historyChartInstance = null;
+      }
 
-      if (historyChartInstance) historyChartInstance.destroy();
+      if (state.historyViewMode === 'calendar') {
+        renderIncomeCalendar(calendarHistory);
+      } else {
+        renderHistoryBarChart(barHistory);
+      }
+    }
 
-      historyChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: isAmt ? '当期盈亏（元）' : '当期收益率',
-              data: values,
-              borderColor: isAmt ? '#00f0ff' : '#10b981',
-              backgroundColor: values.map(value => value >= 0
-                ? 'rgba(244, 63, 94, 0.72)'
-                : 'rgba(16, 185, 129, 0.72)'),
-              borderWidth: 1,
-              borderRadius: 4,
-              maxBarThickness: 28,
-              yAxisID: 'y',
-            },
-          ],
+    function renderHistoryBarChart(history) {
+      const isAmt = state.historyPnlMode !== 'pct';
+      const granularity = state.historyGranularity;
+
+      const grouped = new Map();
+      history.forEach(row => {
+        const key = granularity === 'year' ? row.date.slice(0, 4)
+          : granularity === 'month' ? row.date.slice(0, 7)
+          : granularity === 'week' ? weekStartKey(row.date)
+          : row.date;
+        const current = grouped.get(key) || { total_day_pnl: 0, total_day_pct_factor: 1 };
+        current.total_day_pnl += toNum(row.total_day_pnl);
+        current.total_day_pct_factor *= 1 + toNum(row.total_day_pct) / 100;
+        grouped.set(key, current);
+      });
+
+      const points = [...grouped.entries()].map(([key, row]) => {
+        const value = isAmt ? row.total_day_pnl : (row.total_day_pct_factor - 1) * 100;
+        const label = granularity === 'week'
+          ? `${key.slice(5)}—${addCalendarDays(key, 4).slice(5)}`
+          : key;
+        return { key, label, value };
+      });
+
+      const labels = points.map(p => p.label);
+      const values = points.map(p => p.value);
+
+      const chartDom = document.getElementById('historyChart');
+      if (!chartDom) return;
+
+      historyChartInstance = echarts.init(chartDom);
+
+      historyChartInstance.setOption({
+        backgroundColor: 'transparent',
+        animationDuration: 700,
+        animationEasing: 'cubicOut',
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(255,255,255,0.05)' } },
+          backgroundColor: 'rgba(10, 15, 30, 0.92)',
+          borderColor: 'rgba(51, 65, 85, 0.5)',
+          borderWidth: 1,
+          textStyle: { color: '#e2e8f0', fontSize: 12 },
+          extraCssText: 'backdrop-filter: blur(8px); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);',
+          formatter: params => {
+            const p = params[0];
+            const val = p.value;
+            if (isAmt && state.hideValues) return `${p.name}<br/>盈亏：¥****`;
+            const display = historyValueDisplay(val, isAmt);
+            return `${p.name}<br/>${isAmt ? '盈亏' : '收益率'}：${display}${isAmt ? ' 元' : ''}`;
+          }
         },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: {
-              labels: { color: '#94a3b8', font: { family: 'Space Grotesk', size: 12 }, boxWidth: 14 },
-            },
-            tooltip: {
-              backgroundColor: 'rgba(10, 15, 30, 0.92)',
-              borderColor: 'rgba(51,65,85,0.5)',
-              borderWidth: 1,
-              titleColor: '#e2e8f0',
-              bodyColor: '#94a3b8',
-              callbacks: {
-                label: ctx => {
-                  const val = ctx.parsed.y;
-                  return isAmt
-                    ? ` ${ctx.dataset.label}: ¥${val.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`
-                    : ` ${ctx.dataset.label}: ${(val).toFixed(3)}%`;
-                },
-              },
-            },
-          },
-          scales: {
-            x: {
-              grid: { color: 'rgba(51,65,85,0.2)' },
-              ticks: { color: '#64748b', font: { size: 11 }, maxTicksLimit: 10 },
-            },
-            y: {
-              position: 'left',
-              grid: { color: 'rgba(51,65,85,0.2)' },
-              ticks: {
-                color: isAmt ? '#00f0ff' : '#10b981',
-                font: { size: 11 },
-                callback: v => isAmt
-                  ? (v >= 0 ? '+' : '') + (v / 10000).toFixed(1) + 'w'
-                  : (v >= 0 ? '+' : '') + v.toFixed(2) + '%',
-              },
-            },
-          },
+        grid: { top: 30, left: 12, right: 12, bottom: 24, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: labels,
+          axisLine: { lineStyle: { color: 'rgba(51, 65, 85, 0.5)' } },
+          axisTick: { show: false },
+          axisLabel: {
+            color: '#64748b',
+            fontSize: 11,
+            interval: 'auto',
+            rotate: labels.length > 12 ? 45 : 0
+          }
         },
+        yAxis: {
+          type: 'value',
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: {
+            color: isAmt ? '#00f0ff' : '#10b981',
+            fontSize: 11,
+            formatter: v => {
+              if (isAmt && state.hideValues) return '****';
+              return isAmt
+                ? (v >= 0 ? '+' : '') + (v / 10000).toFixed(1) + 'w'
+                : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+            }
+          },
+          splitLine: { lineStyle: { color: 'rgba(51, 65, 85, 0.2)' } }
+        },
+        series: {
+          type: 'bar',
+          data: values,
+          barWidth: '60%',
+          itemStyle: {
+            borderRadius: params => {
+              const v = params.value;
+              return v >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4];
+            },
+            color: params => {
+              const v = params.value;
+              if (v >= 0) {
+                return new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: '#fb7185' },
+                  { offset: 1, color: 'rgba(244, 63, 94, 0.2)' }
+                ]);
+              }
+              return new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: 'rgba(16, 185, 129, 0.2)' },
+                { offset: 1, color: '#34d399' }
+              ]);
+            }
+          }
+        }
       });
     }
 
@@ -2520,19 +2660,19 @@
       state.sort = e.target.value;
       renderTable();
     });
-    document.querySelectorAll('.segmented button').forEach(btn => {
+    document.querySelectorAll('.segmented[aria-label="盈亏筛选"] button').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.segmented button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.segmented[aria-label="盈亏筛选"] button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         state.filter = btn.dataset.filter;
         renderTable();
       });
     });
 
-    // 历史粒度切换（日 / 月 / 年）
-    document.querySelectorAll('.history-period-btn').forEach(btn => {
+    // 历史粒度切换（日 / 周 / 月 / 年）
+    document.querySelectorAll('.history-controls .segmented[aria-label="时间粒度"] button').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.history-period-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.history-controls .segmented[aria-label="时间粒度"] button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         state.historyGranularity = btn.dataset.granularity;
         if (state.historyData) {
@@ -2544,9 +2684,9 @@
     });
 
     // 盈亏模式切换 (金额 / 百分比)
-    document.querySelectorAll('.pnl-mode-btn').forEach(btn => {
+    document.querySelectorAll('.history-controls .segmented[aria-label="展示模式"] button').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.pnl-mode-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.history-controls .segmented[aria-label="展示模式"] button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         state.historyPnlMode = btn.dataset.mode;
         if (state.historyData) {
@@ -2558,9 +2698,9 @@
     });
 
     // 历史展示方式切换（日历 / 柱状图）
-    document.querySelectorAll('.history-view-btn').forEach(btn => {
+    document.querySelectorAll('.history-controls .segmented[aria-label="视图"] button').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.history-view-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.history-controls .segmented[aria-label="视图"] button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         state.historyViewMode = btn.dataset.view;
         if (state.historyData) renderHistoryChart(state.historyData);
@@ -3161,6 +3301,9 @@
       }
     }
     window.addEventListener('resize', adjustWatchlistPosition);
+    window.addEventListener('resize', () => {
+      if (historyChartInstance) historyChartInstance.resize();
+    });
 
     // ── 隐私数值显示与隐藏控制 ────────────────────────────────────
     document.getElementById('privacyBtn').addEventListener('click', () => {
@@ -3176,6 +3319,7 @@
       // 重绘页面，采用静默刷新避免数字动画闪烁
       render(true);
       renderWatchlist(wlList, true);
+      if (state.historyData) renderHistoryChart(state.historyData);
     });
 
     // ── 启动 ──────────────────────────────────────────────────
