@@ -25,6 +25,13 @@ const DB_PATH = process.env.HOLDINGS_DB_PATH
   : resolve(ROOT, 'holdings.db');
 const db = new DatabaseSync(DB_PATH);
 
+// 优化 SQLite 运行性能与并发模式
+db.exec(`
+  PRAGMA journal_mode = WAL;
+  PRAGMA synchronous = NORMAL;
+  PRAGMA busy_timeout = 5000;
+`);
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS holdings (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,6 +117,11 @@ db.exec(`
     pct_vs_added TEXT,
     UNIQUE(code, date)
   );
+
+  -- 补齐高频查询索引
+  CREATE INDEX IF NOT EXISTS idx_transactions_code ON transactions(code);
+  CREATE INDEX IF NOT EXISTS idx_holdings_code_date ON holdings(code, date);
+  CREATE INDEX IF NOT EXISTS idx_watchlist_price_code_date ON watchlist_price(code, date);
 `);
 
 // ── 持仓基础数据种子（仅用于首次初始化 base_holdings 表）────
@@ -224,12 +236,13 @@ function isTradingHours() {
 let lastRefreshTime = null;
 let refreshLock = false;
 
-export async function refreshHoldings() {
-  // 增加周末过滤防御，防止生成周末静止的历史数据行
+export async function refreshHoldings(options = {}) {
+  const { force = false } = options;
+  // 增加周末过滤防御，防止定时任务生成周末静止的历史数据行
   const bj = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
   const day = bj.getDay(); // 0=周日, 6=周六
-  if (day === 0 || day === 6) {
-    console.log('[refresh] 周末不开盘，跳过行情抓取及写入');
+  if (!force && (day === 0 || day === 6)) {
+    console.log('[refresh] 周末不开盘，跳过行情自动抓取');
     return { skipped: true, reason: 'weekend' };
   }
 
@@ -239,7 +252,7 @@ export async function refreshHoldings() {
   }
   refreshLock = true;
   const startedAt = new Date().toISOString();
-  console.log(`[refresh] 开始抓取行情 ${startedAt}`);
+  console.log(`[refresh] 开始抓取行情 ${startedAt}${force ? ' (手动/强制执行)' : ''}`);
 
   try {
     // 从 DB 读取持仓（取代硬编码 SEED_HOLDINGS）
@@ -257,9 +270,9 @@ export async function refreshHoldings() {
     ]);
 
     // 开盘前或 A/H 股同时休市时，行情源只会返回上一交易日。
-    // 当所有可判定的行情日期都不是今天时，不写入今日快照。
+    // 当所有可判定的行情日期都不是今天且非强制刷新时，不写入今日快照。
     const quoteDates = Object.values(quotes).map(q => q.lastTradeDate).filter(Boolean);
-    if (quoteDates.length > 0 && !quoteDates.includes(today)) {
+    if (!force && quoteDates.length > 0 && !quoteDates.includes(today)) {
       const uniqueDates = [...new Set(quoteDates)];
       console.log(`[refresh] 当前无已开盘市场（行情日期: ${uniqueDates.join(', ')}），跳过写入`);
       return { skipped: true, reason: 'no_market_open', quoteDates: uniqueDates };
@@ -580,9 +593,9 @@ app.get('/api/holdings/history', (c) => {
   return c.json({ history: [...rows].reverse() }); // 升序返回（图表用）
 });
 
-/** POST /api/holdings/refresh — 手动触发一次行情抓取 */
+/** POST /api/holdings/refresh — 手动触发一次行情抓取（强制重算并同步快照） */
 app.post('/api/holdings/refresh', async (c) => {
-  const result = await refreshHoldings();
+  const result = await refreshHoldings({ force: true });
   return c.json(result, result.ok || result.skipped ? 200 : 500);
 });
 
@@ -849,199 +862,237 @@ app.get('/api/stocks/search', async (c) => {
   }
 });
 
-/** GET /api/indices — 获取大盘指数行情（上证、深证、创业板、恒生科技、黄金等） */
-app.get('/api/indices', async (c) => {
+// ── 大盘指数内存缓存 ─────────────────────────────────────────
+let cachedIndicesData = null;
+let cachedIndicesTimestamp = 0;
+let indicesFetchPromise = null;
+
+async function fetchIndicesDataDirect() {
   const symbols = [
     'sh000001', 'sz399001', 'sz399006', 
     'hkHSI', 'hkHSTECH', 'sh518880', 
     'sh000510', 'sh000852', 'sh000688', 'bj899050'
   ];
-  try {
-    const url = `https://qt.gtimg.cn/q=${symbols.join(',')}`;
-    // 并行获取实时指数、国内现货黄金(SGE_AU9999)以及历史K线
-    const klineSymbols = ['sh000001', 'sz399001', 'sz399006'];
-    const klinePromises = klineSymbols.map(sym => 
-      fetch(`https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sym}&scale=240&ma=no&datalen=40`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(6000)
-      }).then(r => r.json()).catch(() => [])
-    );
 
-    const sgePromise = fetch('https://hq.sinajs.cn/list=SGE_AU9999', {
+  const url = `https://qt.gtimg.cn/q=${symbols.join(',')}`;
+  // 并行获取实时指数、国内现货黄金(SGE_AU9999)以及历史K线
+  const klineSymbols = ['sh000001', 'sz399001', 'sz399006'];
+  const klinePromises = klineSymbols.map(sym => 
+    fetch(`https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sym}&scale=240&ma=no&datalen=40`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(6000)
+    }).then(r => r.json()).catch(() => [])
+  );
+
+  const sgePromise = fetch('https://hq.sinajs.cn/list=SGE_AU9999', {
+    headers: {
+      Referer: 'https://finance.sina.com.cn/',
+      'User-Agent': 'Mozilla/5.0',
+    },
+    signal: AbortSignal.timeout(10000),
+  }).then(async r => {
+    if (!r.ok) return null;
+    const buf = await r.arrayBuffer();
+    const body = new TextDecoder('gbk').decode(buf);
+    const match = body.match(/="([^"]+)"/);
+    if (!match) return null;
+    const fields = match[1].split(',');
+    if (fields.length < 10) return null;
+    const current = parseFloat(fields[3]) || 0;
+    const prevClose = parseFloat(fields[9]) || 0;
+    if (current === 0) return null;
+    const changeVal = prevClose > 0 ? current - prevClose : 0;
+    const changePct = prevClose > 0 ? (changeVal / prevClose) * 100 : 0;
+    return {
+      symbol: 'SGE_AU9999',
+      name: '国内现货黄金',
+      current,
+      changeVal,
+      changePct,
+    };
+  }).catch(() => null);
+
+  const [resp, sgeData, ...klineResults] = await Promise.all([
+    fetch(url, {
       headers: {
-        Referer: 'https://finance.sina.com.cn/',
+        Referer: 'https://gu.qq.com/',
         'User-Agent': 'Mozilla/5.0',
       },
       signal: AbortSignal.timeout(10000),
-    }).then(async r => {
-      if (!r.ok) return null;
-      const buf = await r.arrayBuffer();
-      const body = new TextDecoder('gbk').decode(buf);
-      const match = body.match(/="([^"]+)"/);
-      if (!match) return null;
-      const fields = match[1].split(',');
-      if (fields.length < 10) return null;
-      const current = parseFloat(fields[3]) || 0;
-      const prevClose = parseFloat(fields[9]) || 0;
-      if (current === 0) return null;
-      const changeVal = prevClose > 0 ? current - prevClose : 0;
-      const changePct = prevClose > 0 ? (changeVal / prevClose) * 100 : 0;
-      return {
-        symbol: 'SGE_AU9999',
-        name: '国内现货黄金',
-        current,
-        changeVal,
-        changePct,
-      };
-    }).catch(() => null);
+    }),
+    sgePromise,
+    ...klinePromises
+  ]);
 
-    const [resp, sgeData, ...klineResults] = await Promise.all([
-      fetch(url, {
-        headers: {
-          Referer: 'https://gu.qq.com/',
-          'User-Agent': 'Mozilla/5.0',
-        },
-        signal: AbortSignal.timeout(10000),
-      }),
-      sgePromise,
-      ...klinePromises
-    ]);
+  if (!resp.ok) throw new Error(`腾讯指数接口 HTTP ${resp.status}`);
 
-    if (!resp.ok) return c.json({ indices: [], month_change: {} });
+  const buf = await resp.arrayBuffer();
+  const body = new TextDecoder('gbk').decode(buf);
 
-    const buf = await resp.arrayBuffer();
-    const body = new TextDecoder('gbk').decode(buf);
+  const itemsMap = {};
+  const priceMap = {}; // 用以辅助计算 K 线对比
 
-    const itemsMap = {};
-    const priceMap = {}; // 用以辅助计算 K 线对比
+  for (const entry of body.split(';')) {
+    const e = entry.trim();
+    if (!e || !e.includes('="')) continue;
+    const eqIdx = e.indexOf('="');
+    const left = e.slice(0, eqIdx);
+    const right = e.slice(eqIdx + 2).replace(/";?\s*$/, '');
+    const symbol = left.split('_').pop();
+    const fields = right.split('~');
+    if (fields.length <= 32) continue;
 
-    for (const entry of body.split(';')) {
-      const e = entry.trim();
-      if (!e || !e.includes('="')) continue;
-      const eqIdx = e.indexOf('="');
-      const left = e.slice(0, eqIdx);
-      const right = e.slice(eqIdx + 2).replace(/";?\s*$/, '');
-      const symbol = left.split('_').pop();
-      const fields = right.split('~');
-      if (fields.length <= 32) continue;
-
-      let name = fields[1].trim();
-      if (symbol === 'sh518880') {
-        name = '黄金基金';
-      } else if (symbol === 'sh000510') {
-        name = '中证A500';
-      } else if (symbol === 'sh000852') {
-        name = '中证1000';
-      } else if (symbol === 'sh000688') {
-        name = '科创50';
-      } else if (symbol === 'bj899050') {
-        name = '北证50';
-      }
-      const current = parseFloat(fields[3]) || 0;
-      const changeVal = parseFloat(fields[31]) || 0;
-      const changePct = parseFloat(fields[32]) || 0;
-
-      priceMap[symbol] = current;
-
-      itemsMap[symbol] = {
-        symbol,
-        name,
-        current,
-        changeVal,
-        changePct,
-      };
+    let name = fields[1].trim();
+    if (symbol === 'sh518880') {
+      name = '黄金基金';
+    } else if (symbol === 'sh000510') {
+      name = '中证A500';
+    } else if (symbol === 'sh000852') {
+      name = '中证1000';
+    } else if (symbol === 'sh000688') {
+      name = '科创50';
+    } else if (symbol === 'bj899050') {
+      name = '北证50';
     }
+    const current = parseFloat(fields[3]) || 0;
+    const changeVal = parseFloat(fields[31]) || 0;
+    const changePct = parseFloat(fields[32]) || 0;
 
-    // 周末或实时接口返回空值时，使用新浪日 K 线最近两个交易日的收盘价。
-    // 这样“跑赢大盘”的当日模式仍显示最近交易日数据，不会把指数误显示为 0。
-    const bjNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-    const isWeekend = bjNow.getDay() === 0 || bjNow.getDay() === 6;
-    const latestKlineMap = {};
-    klineSymbols.forEach((sym, idx) => {
-      const rows = (klineResults[idx] || [])
-        .filter(row => row?.day && Number(row.close) > 0)
-        .sort((a, b) => a.day.localeCompare(b.day));
-      const latest = rows.at(-1);
-      const previous = rows.at(-2);
-      if (!latest) return;
+    priceMap[symbol] = current;
 
-      const latestClose = Number(latest.close);
-      const previousClose = previous ? Number(previous.close) : 0;
-      latestKlineMap[sym] = { latestClose, previousClose, latestDate: latest.day };
-
-      if (isWeekend || !itemsMap[sym] || itemsMap[sym].current <= 0) {
-        const changeVal = previousClose > 0 ? latestClose - previousClose : 0;
-        const changePct = previousClose > 0 ? (changeVal / previousClose) * 100 : 0;
-        const existing = itemsMap[sym] || { symbol: sym, name: sym };
-        itemsMap[sym] = { ...existing, current: latestClose, changeVal, changePct };
-        priceMap[sym] = latestClose;
-      }
-    });
-
-    if (sgeData) {
-      itemsMap['SGE_AU9999'] = sgeData;
-    }
-
-    const orderedSymbols = [
-      'sh000001', 'sz399001', 'sz399006', 
-      'hkHSI', 'hkHSTECH', 'sh518880', 'SGE_AU9999',
-      'sh000510', 'sh000852', 'sh000688', 'bj899050'
-    ];
-
-    const result = orderedSymbols.map(sym => itemsMap[sym]).filter(Boolean);
-
-    // 计算当月收益率百分比
-    const monthChange = {};
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-    const curYear = now.getFullYear();
-    const curMonth = now.getMonth() + 1;
-    
-    // 确定上个月
-    const prevYear = curMonth === 1 ? curYear - 1 : curYear;
-    const prevMonth = curMonth === 1 ? 12 : curMonth - 1;
-    const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
-
-    klineSymbols.forEach((sym, idx) => {
-      const kline = klineResults[idx] || [];
-      const currentPrice = (isWeekend ? latestKlineMap[sym]?.latestClose : priceMap[sym]) || 0;
-      if (currentPrice === 0 || kline.length === 0) {
-        monthChange[sym] = 0.0;
-        return;
-      }
-      
-      const prevMonthRows = kline.filter(r => r.day.startsWith(prevMonthStr));
-      let basePrice = 0;
-      if (prevMonthRows.length > 0) {
-        prevMonthRows.sort((a, b) => a.day.localeCompare(b.day));
-        basePrice = parseFloat(prevMonthRows[prevMonthRows.length - 1].close);
-      } else {
-        const curMonthStr = `${curYear}-${String(curMonth).padStart(2, '0')}`;
-        const curMonthRows = kline.filter(r => r.day.startsWith(curMonthStr));
-        if (curMonthRows.length > 0) {
-          curMonthRows.sort((a, b) => a.day.localeCompare(b.day));
-          basePrice = parseFloat(curMonthRows[0].open);
-        }
-      }
-
-      if (basePrice > 0) {
-        monthChange[sym] = Math.trunc(((currentPrice - basePrice) / basePrice * 100) * 1000) / 1000;
-      } else {
-        monthChange[sym] = 0.0;
-      }
-    });
-
-    return c.json({ indices: result, month_change: monthChange });
-  } catch (err) {
-    console.error('Fetch indices error:', err);
-    return c.json({ indices: [], month_change: {} });
+    itemsMap[symbol] = {
+      symbol,
+      name,
+      current,
+      changeVal,
+      changePct,
+    };
   }
+
+  // 周末或实时接口返回空值时，使用新浪日 K 线最近两个交易日的收盘价
+  const bjNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  const isWeekend = bjNow.getDay() === 0 || bjNow.getDay() === 6;
+  const latestKlineMap = {};
+  klineSymbols.forEach((sym, idx) => {
+    const rows = (klineResults[idx] || [])
+      .filter(row => row?.day && Number(row.close) > 0)
+      .sort((a, b) => a.day.localeCompare(b.day));
+    const latest = rows.at(-1);
+    const previous = rows.at(-2);
+    if (!latest) return;
+
+    const latestClose = Number(latest.close);
+    const previousClose = previous ? Number(previous.close) : 0;
+    latestKlineMap[sym] = { latestClose, previousClose, latestDate: latest.day };
+
+    if (isWeekend || !itemsMap[sym] || itemsMap[sym].current <= 0) {
+      const changeVal = previousClose > 0 ? latestClose - previousClose : 0;
+      const changePct = previousClose > 0 ? (changeVal / previousClose) * 100 : 0;
+      const existing = itemsMap[sym] || { symbol: sym, name: sym };
+      itemsMap[sym] = { ...existing, current: latestClose, changeVal, changePct };
+      priceMap[sym] = latestClose;
+    }
+  });
+
+  if (sgeData) {
+    itemsMap['SGE_AU9999'] = sgeData;
+  }
+
+  const orderedSymbols = [
+    'sh000001', 'sz399001', 'sz399006', 
+    'hkHSI', 'hkHSTECH', 'sh518880', 'SGE_AU9999',
+    'sh000510', 'sh000852', 'sh000688', 'bj899050'
+  ];
+
+  const result = orderedSymbols.map(sym => itemsMap[sym]).filter(Boolean);
+
+  // 计算当月收益率百分比
+  const monthChange = {};
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  
+  // 确定上个月
+  const prevYear = curMonth === 1 ? curYear - 1 : curYear;
+  const prevMonth = curMonth === 1 ? 12 : curMonth - 1;
+  const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+
+  klineSymbols.forEach((sym, idx) => {
+    const kline = klineResults[idx] || [];
+    const currentPrice = (isWeekend ? latestKlineMap[sym]?.latestClose : priceMap[sym]) || 0;
+    if (currentPrice === 0 || kline.length === 0) {
+      monthChange[sym] = 0.0;
+      return;
+    }
+    
+    const prevMonthRows = kline.filter(r => r.day.startsWith(prevMonthStr));
+    let basePrice = 0;
+    if (prevMonthRows.length > 0) {
+      prevMonthRows.sort((a, b) => a.day.localeCompare(b.day));
+      basePrice = parseFloat(prevMonthRows[prevMonthRows.length - 1].close);
+    } else {
+      const curMonthStr = `${curYear}-${String(curMonth).padStart(2, '0')}`;
+      const curMonthRows = kline.filter(r => r.day.startsWith(curMonthStr));
+      if (curMonthRows.length > 0) {
+        curMonthRows.sort((a, b) => a.day.localeCompare(b.day));
+        basePrice = parseFloat(curMonthRows[0].open);
+      }
+    }
+
+    if (basePrice > 0) {
+      monthChange[sym] = Math.trunc(((currentPrice - basePrice) / basePrice * 100) * 1000) / 1000;
+    } else {
+      monthChange[sym] = 0.0;
+    }
+  });
+
+  return { indices: result, month_change: monthChange };
+}
+
+async function getIndicesData() {
+  const trading = isTradingHours();
+  const ttl = trading ? 30 * 1000 : 5 * 60 * 1000; // 交易时段 30s，非交易时段 5min
+  const now = Date.now();
+
+  if (cachedIndicesData && (now - cachedIndicesTimestamp < ttl)) {
+    return cachedIndicesData;
+  }
+
+  if (indicesFetchPromise) {
+    return indicesFetchPromise;
+  }
+
+  indicesFetchPromise = (async () => {
+    try {
+      const data = await fetchIndicesDataDirect();
+      cachedIndicesData = data;
+      cachedIndicesTimestamp = Date.now();
+      return data;
+    } catch (err) {
+      console.warn(`[indices] 抓取失败 (${err.message})，降级使用最近有效缓存`);
+      if (cachedIndicesData) {
+        return cachedIndicesData;
+      }
+      return { indices: [], month_change: {} };
+    } finally {
+      indicesFetchPromise = null;
+    }
+  })();
+
+  return indicesFetchPromise;
+}
+
+/** GET /api/indices — 获取大盘指数行情（上证、深证、创业板、恒生科技、黄金等） */
+app.get('/api/indices', async (c) => {
+  const data = await getIndicesData();
+  return c.json(data);
 });
 
 /** GET /api/watchlist — 获取全部自选股 + 最新价格快照 */
 app.get('/api/watchlist', (c) => {
   const items = db.prepare('SELECT * FROM watchlist ORDER BY sort_order ASC, created_at ASC').all();
   const holdingCodes = new Set(
-    db.prepare('SELECT DISTINCT code FROM holdings').all().map(r => r['code'])
+    db.prepare('SELECT DISTINCT code FROM base_holdings WHERE quantity > 0').all().map(r => r['code'])
   );
   const today = new Date().toLocaleString('en-CA', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -1084,8 +1135,8 @@ app.post('/api/watchlist', async (c) => {
   const code = (body.code || '').trim().toUpperCase();
   if (!code) return c.json({ error: '证券代码不能为空' }, 400);
 
-  // 检查是否已在持仓中
-  const inHoldings = db.prepare('SELECT 1 FROM holdings WHERE code = ? LIMIT 1').get(code);
+  // 检查是否当前有效持仓中（持股数量 > 0）
+  const inHoldings = db.prepare('SELECT 1 FROM base_holdings WHERE code = ? AND quantity > 0 LIMIT 1').get(code);
   if (inHoldings) return c.json({ error: `${code} 已在持仓中，无需重复追踪` }, 409);
 
   // 检查是否已在自选中
@@ -1111,17 +1162,24 @@ app.post('/api/watchlist', async (c) => {
   const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM watchlist').get();
   const sortOrder = ((maxOrder && maxOrder['m']) ?? -1) + 1;
 
-  db.prepare(`
-    INSERT INTO watchlist (code, name, added_date, added_price, note, sort_order, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(code, name, today, quote.current, note, sortOrder, new Date().toISOString());
+  db.exec('BEGIN');
+  try {
+    db.prepare(`
+      INSERT INTO watchlist (code, name, added_date, added_price, note, sort_order, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(code, name, today, quote.current, note, sortOrder, new Date().toISOString());
 
-  // 立即写入当日快照
-  db.prepare(`
-    INSERT INTO watchlist_price (code, date, price, prev_close, pct_vs_added)
-    VALUES (?, ?, ?, ?, '0.00%')
-    ON CONFLICT(code, date) DO NOTHING
-  `).run(code, today, quote.current, quote.previousClose);
+    // 立即写入当日快照
+    db.prepare(`
+      INSERT INTO watchlist_price (code, date, price, prev_close, pct_vs_added)
+      VALUES (?, ?, ?, ?, '0.00%')
+      ON CONFLICT(code, date) DO NOTHING
+    `).run(code, today, quote.current, quote.previousClose);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return c.json({ error: `自选股保存失败: ${err.message}` }, 500);
+  }
 
   console.log(`[watchlist] 添加: ${code} ${name} @${quote.current}`);
   return c.json({ ok: true, code, name, added_price: quote.current, added_date: today });
@@ -1132,30 +1190,43 @@ app.delete('/api/watchlist/:code', (c) => {
   const code = c.req.param('code').toUpperCase();
   const exists = db.prepare('SELECT 1 FROM watchlist WHERE code = ?').get(code);
   if (!exists) return c.json({ error: `${code} 不在自选股列表中` }, 404);
-  db.prepare('DELETE FROM watchlist WHERE code = ?').run(code);
-  db.prepare('DELETE FROM watchlist_price WHERE code = ?').run(code);
+
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM watchlist WHERE code = ?').run(code);
+    db.prepare('DELETE FROM watchlist_price WHERE code = ?').run(code);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return c.json({ error: `删除失败: ${err.message}` }, 500);
+  }
+
   console.log(`[watchlist] 删除: ${code}`);
   return c.json({ ok: true, code });
 });
 
 /** PATCH /api/watchlist/reorder — 更新排列顺序 */
-app.patch('/api/watchlist/reorder', (c) => {
-  let body;
-  try { body = c.req.raw; } catch { return c.json({ error: '解析失败' }, 400); }
-  return c.req.json().then(data => {
-    const codes = Array.isArray(data.codes) ? data.codes : [];
-    if (!codes.length) return c.json({ error: 'codes 不能为空' }, 400);
-    const update = db.prepare('UPDATE watchlist SET sort_order = ? WHERE code = ?');
-    db.exec('BEGIN');
-    try {
-      codes.forEach((code, idx) => update.run(idx, code.toUpperCase()));
-      db.exec('COMMIT');
-    } catch (e) {
-      db.exec('ROLLBACK');
-      return c.json({ error: e.message }, 500);
-    }
-    return c.json({ ok: true });
-  }).catch(() => c.json({ error: '请求体无法解析' }, 400));
+app.patch('/api/watchlist/reorder', async (c) => {
+  let data;
+  try {
+    data = await c.req.json();
+  } catch {
+    return c.json({ error: '请求体解析失败' }, 400);
+  }
+
+  const codes = Array.isArray(data?.codes) ? data.codes : [];
+  if (!codes.length) return c.json({ error: 'codes 不能为空' }, 400);
+
+  const update = db.prepare('UPDATE watchlist SET sort_order = ? WHERE code = ?');
+  db.exec('BEGIN');
+  try {
+    codes.forEach((code, idx) => update.run(idx, code.toUpperCase()));
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    return c.json({ error: e.message }, 500);
+  }
+  return c.json({ ok: true });
 });
 
 // ── 静态文件（public/）────────────────────────────────────

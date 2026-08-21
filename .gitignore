@@ -5,7 +5,9 @@
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db
+# IDE & Tools
+.zcode/
+.agents/
 
 # Logs
 *.log
@@ -21,9 +23,13 @@ node_modules/
 server/node_modules/
 public/node_modules/
 
-# Local databases
+# Local databases & WAL
 *.db
+*.db-wal
+*.db-shm
 holdings.db
 
 # Local temporary or backup data
 *数据源*.csv
+*.bak
+*.backup

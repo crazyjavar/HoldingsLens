@@ -114,6 +114,7 @@ async function fetchFromSina(symbols) {
     },
     signal: AbortSignal.timeout(20000),
   });
+  if (!resp.ok) throw new Error(`新浪行情接口 HTTP ${resp.status}`);
   // 新浪返回 GBK 编码
   const buf = await resp.arrayBuffer();
   const body = new TextDecoder('gbk').decode(buf);
@@ -133,6 +134,7 @@ async function fetchFromTencent(symbols) {
     },
     signal: AbortSignal.timeout(20000),
   });
+  if (!resp.ok) throw new Error(`腾讯行情接口 HTTP ${resp.status}`);
   const buf = await resp.arrayBuffer();
   const body = new TextDecoder('gbk').decode(buf);
   return parseTencentResponse(body);
@@ -203,6 +205,7 @@ async function fetchFromTencentWithNames(symbols) {
     },
     signal: AbortSignal.timeout(20000),
   });
+  if (!resp.ok) throw new Error(`腾讯行情接口 HTTP ${resp.status}`);
   const buf = await resp.arrayBuffer();
   const body = new TextDecoder('gbk').decode(buf);
   return parseTencentResponse(body, true);
