@@ -205,9 +205,13 @@ document.getElementById('wlAddBtn').addEventListener('click', async () => {
     document.getElementById('wlCode').value = '';
     document.getElementById('wlName').value = '';
     document.getElementById('wlNote').value = '';
-    const suggestBox = document.getElementById('wlSuggestBox');
-    if (suggestBox) suggestBox.style.display = 'none';
     await loadWatchlist(false);
+    const container = document.getElementById('wlTableBody');
+    if (container) {
+      setTimeout(() => {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      }, 50);
+    }
   } catch (e) {
     errEl.textContent = '网络错误，请稍后重试';
   } finally {

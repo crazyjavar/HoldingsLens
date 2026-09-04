@@ -8,6 +8,8 @@ ehthumbs.db
 # IDE & Tools
 .zcode/
 .agents/
+.freebuff/
+.claude/
 
 # Logs
 *.log

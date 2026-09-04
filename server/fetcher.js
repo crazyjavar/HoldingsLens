@@ -165,9 +165,14 @@ export async function fetchPrices(symbols) {
     }
   }
 
-  if (remaining.length > 0) {
+  // 完全拿不到任何行情时仍然抛错，避免调用方把当天快照写成空值/0 值。
+  if (symbols.length > 0 && remaining.length === symbols.length) {
     const detail = errors.length ? errors.join('; ') : '行情源无数据';
-    throw new Error(`未获取到现价: ${remaining.join(', ')} (${detail})`);
+    throw new Error(`未获取到任何现价: ${symbols.join(', ')} (${detail})`);
+  }
+  // 部分标的行情缺失时降级为“尽力而为”：已拿到的照常返回，缺失的由调用方跳过。
+  if (remaining.length > 0) {
+    console.warn(`[fetch] 部分标的行情缺失，将跳过: ${remaining.join(', ')} (${errors.join('; ') || '行情源无数据'})`);
   }
   return prices;
 }

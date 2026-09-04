@@ -81,15 +81,29 @@ sqlite3 holdings.db ".backup 'holdings.db.backup'"
 
 ```text
 .
-├── holdings.db
-├── public/
-│   ├── 持仓明细展示.html
-│   └── winning_character.png
-├── server/
-│   ├── fetcher.js
-│   ├── package.json
-│   └── server.js
-└── README.md
+├── holdings.db                      # SQLite 数据库
+├── com.fei.holdings-server.plist    # launchd 守护配置（本地运行）
+├── README.md
+├── public/                          # 前端（原生 HTML/CSS/JS，ES 模块）
+│   ├── 持仓明细展示.html            # 页面入口
+│   ├── app.js                       # 前端入口模块
+│   ├── style.css
+│   ├── favicon.svg
+│   ├── winning_character.png
+│   └── js/
+│       ├── state.js
+│       ├── utils.js
+│       ├── effects.js
+│       ├── indices.js
+│       ├── history.js
+│       ├── rendering.js
+│       ├── transactions.js
+│       └── watchlist.js
+└── server/
+    ├── server.js                    # 服务主入口（Hono + node:sqlite）
+    ├── fetcher.js                   # 行情/汇率抓取
+    ├── package.json
+    └── package-lock.json
 ```
 
 ## 注意事项

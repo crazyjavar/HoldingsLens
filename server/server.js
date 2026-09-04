@@ -218,17 +218,36 @@ function toSymbol(code) {
 }
 
 /**
+ * 北京时间工具。Asia/Shanghai 全年固定 UTC+8（无夏令时），
+ * 因此用 Date 的 UTC 字段承载北京时间墙钟，避免依赖服务器本地时区，
+ * 以及 `new Date(toLocaleString(...))` 对本地化字符串的反向解析。
+ */
+function beijingParts(date = new Date()) {
+  const t = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return {
+    year:    t.getUTCFullYear(),
+    month:   t.getUTCMonth() + 1,
+    date:    t.getUTCDate(),
+    day:     t.getUTCDay(), // 0=周日, 6=周六
+    hours:   t.getUTCHours(),
+    minutes: t.getUTCMinutes(),
+    seconds: t.getUTCSeconds(),
+  };
+}
+
+/** 北京时间日期字符串 YYYY-MM-DD */
+function beijingDate(date = new Date()) {
+  const p = beijingParts(date);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.date).padStart(2, '0')}`;
+}
+
+/**
  * 判断当前是否在交易时段（工作日 9:25-15:05）
  */
 function isTradingHours() {
-  const now = new Date();
-  // 转换为北京时间
-  const bj = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-  const day = bj.getDay(); // 0=周日, 6=周六
-  if (day === 0 || day === 6) return false;
-  const h = bj.getHours();
-  const m = bj.getMinutes();
-  const total = h * 60 + m;
+  const p = beijingParts();
+  if (p.day === 0 || p.day === 6) return false;
+  const total = p.hours * 60 + p.minutes;
   return total >= 9 * 60 + 25 && total <= 15 * 60 + 5;
 }
 
@@ -238,11 +257,10 @@ let refreshLock = false;
 
 export async function refreshHoldings(options = {}) {
   const { force = false } = options;
-  // 增加周末过滤防御，防止定时任务生成周末静止的历史数据行
-  const bj = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-  const day = bj.getDay(); // 0=周日, 6=周六
-  if (!force && (day === 0 || day === 6)) {
-    console.log('[refresh] 周末不开盘，跳过行情自动抓取');
+  // 周末没有行情数据，无论是否手动强制刷新都直接跳过，防止写入周末静止快照。
+  const day = beijingParts().day; // 0=周日, 6=周六
+  if (day === 0 || day === 6) {
+    console.log('[refresh] 周末不开盘，跳过行情抓取');
     return { skipped: true, reason: 'weekend' };
   }
 
@@ -255,15 +273,20 @@ export async function refreshHoldings(options = {}) {
   console.log(`[refresh] 开始抓取行情 ${startedAt}${force ? ' (手动/强制执行)' : ''}`);
 
   try {
-    // 从 DB 读取持仓（取代硬编码 SEED_HOLDINGS）
-    const baseHoldings = db.prepare('SELECT * FROM base_holdings').all();
-    const symbols = baseHoldings.map(h => toSymbol(h['code']));
-    const today = new Date().toLocaleString('en-CA', {
-      timeZone: 'Asia/Shanghai',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).slice(0, 10); // YYYY-MM-DD
+    // 从 DB 读取持仓（取代硬编码 SEED_HOLDINGS）。
+    // 只读取当前仍有持仓数量的标的，清仓（quantity=0）的标的不再进入组合展示与快照。
+    const baseHoldings = db.prepare('SELECT * FROM base_holdings WHERE quantity > 0').all();
+    const today = beijingDate(); // YYYY-MM-DD
+
+    // 持仓与自选一次抓取同一份行情（取并集）：同一标的的现价/昨收/涨跌幅必须来自同一时刻。
+    // 此前“先抓持仓行情、再单独抓一次自选行情”会在两次请求之间产生价格跳动，
+    // 导致同一只股票（如美团）在持仓明细与自选里显示不同的今日涨跌，且每次刷新都无法对齐。
+    const wlSymbols = db.prepare('SELECT code FROM watchlist').all()
+      .map(r => sinaSymbol(r['code']));
+    const symbols = [...new Set([
+      ...baseHoldings.map(h => toSymbol(h['code'])),
+      ...wlSymbols,
+    ])];
     const [quotes] = await Promise.all([
       fetchPrices(symbols),
       refreshFxRate(),
@@ -337,8 +360,10 @@ export async function refreshHoldings(options = {}) {
 
       const costVal  = Math.round(cost * quantity * fx * 100) / 100;
       const pnl      = Math.round((market - costVal) * 100) / 100;
+      // 休市标的现价统一取 prevCloseToUse，与 market 保持同一口径，避免金额与比例不一致。
+      const effectivePrice = isClosedToday ? prevCloseToUse : current;
       const pnlRate  = cost > 0
-        ? `${((current - cost) / cost * 100).toFixed(2)}%`
+        ? `${((effectivePrice - cost) / cost * 100).toFixed(2)}%`
         : '0.00%';
 
       totalMarket    += market;
@@ -353,7 +378,7 @@ export async function refreshHoldings(options = {}) {
       totalPnl       += pnl;
 
       rows.push({ date: today, code, name, market, cost, prev_close: prevCloseToUse,
-        price: isClosedToday ? prevCloseToUse : current, quantity, day_pnl: dayPnl, day_pnl_pct: dayRate,
+        price: effectivePrice, quantity, day_pnl: dayPnl, day_pnl_pct: dayRate,
         total_pnl: pnl, total_pnl_pct: pnlRate, weight: null, change_pct: '-' });
     }
 
@@ -382,6 +407,8 @@ export async function refreshHoldings(options = {}) {
 
     db.exec('BEGIN');
     try {
+      // 清理当天残留的 0 仓位快照，避免清仓标的一直出现在最新持仓里。
+      db.prepare('DELETE FROM holdings WHERE date = ? AND quantity = 0').run(today);
       for (const row of rows) upsert.run(row);
       db.exec('COMMIT');
     } catch (txErr) {
@@ -413,8 +440,8 @@ export async function refreshHoldings(options = {}) {
     lastRefreshTime = new Date().toISOString();
     console.log(`[refresh] 完成，${rows.length} 条持仓写入 SQLite`);
 
-    // ── 顺带刷新自选股行情快照 ────────────────────────────────
-    await refreshWatchlistPrices(today).catch(e =>
+    // ── 顺带写入自选股行情快照（复用同一份 quotes）──────────────
+    await refreshWatchlistPrices(today, quotes).catch(e =>
       console.warn('[watchlist] 快照写入失败:', e.message)
     );
 
@@ -428,20 +455,14 @@ export async function refreshHoldings(options = {}) {
 }
 
 /**
- * 刷新自选股行情快照（写入 watchlist_price）
+ * 写入自选股行情快照（watchlist_price）。
+ * 行情复用 refreshHoldings 主流程已抓取的 quotes（同一时刻同一份数据），不再二次联网抓取。
+ * @param {string} today - YYYY-MM-DD
+ * @param {Record<string, {current: number, previousClose: number}>} quotes - 主流程已抓取的行情
  */
-async function refreshWatchlistPrices(today) {
+async function refreshWatchlistPrices(today, quotes) {
   const items = db.prepare('SELECT code, added_price FROM watchlist').all();
   if (items.length === 0) return;
-
-  const symbols = items.map(r => sinaSymbol(r['code']));
-  let quotes;
-  try {
-    quotes = await fetchPrices(symbols);
-  } catch (err) {
-    console.warn('[watchlist] 行情抓取失败:', err.message);
-    return;
-  }
 
   const upsert = db.prepare(`
     INSERT INTO watchlist_price (code, date, price, prev_close, pct_vs_added)
@@ -556,10 +577,10 @@ app.get('/api/holdings/latest', (c) => {
   const weekPnlRate = weekStartMarket > 0 ? `${(weekPnl / weekStartMarket * 100).toFixed(2)}%` : '0.00%';
 
   // 周战报只在当周周五收盘后及紧随的周末开放，避免旧数据误触发。
-  const nowBj = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-  const todayBj = new Date(Date.UTC(nowBj.getFullYear(), nowBj.getMonth(), nowBj.getDate()));
-  const daysSinceLatest = Math.round((todayBj.getTime() - latestDay.getTime()) / 86400000);
-  const afterFridayClose = nowBj.getHours() * 60 + nowBj.getMinutes() >= 15 * 60 + 5;
+  const nowBj = beijingParts();
+  const todayBj = Date.UTC(nowBj.year, nowBj.month - 1, nowBj.date);
+  const daysSinceLatest = Math.round((todayBj - latestDay.getTime()) / 86400000);
+  const afterFridayClose = nowBj.hours * 60 + nowBj.minutes >= 15 * 60 + 5;
   const weekReportReady = latestWeekday === 5 && daysSinceLatest >= 0 && daysSinceLatest <= 2
     && (daysSinceLatest > 0 || afterFridayClose);
 
@@ -694,7 +715,8 @@ app.post('/api/transactions', async (c) => {
   if (isHK) await refreshFxRate();
   const fxRate = isHK ? cachedFxRate : 1.0;
   // 港股: CNY / 汇率 / 股数 = HKD 每股; A股: CNY / 股数 = CNY 每股
-  const price = amountCny / fxRate / quantity;
+  // 保留 4 位小数，避免浮点除法产生超长小数污染成本回放与展示。
+  const price = Math.round((amountCny / fxRate / quantity) * 10000) / 10000;
 
   // 新增流水、创建新标的、回放持仓必须全部成功或全部回滚
   db.exec('BEGIN');
@@ -770,6 +792,20 @@ function replayHolding(code) {
   `).run(cost, quantity, new Date().toISOString(), code);
 }
 
+/**
+ * 判断某标的是否已成为“空占位”持仓：
+ * 基础持仓与期初持仓都为 0 且没有任何交易记录（例如撤销了唯一一笔建仓买入）。
+ * 这种占位行没有任何数据价值，可在撤销后直接清理，避免积累孤儿记录。
+ */
+function isPlaceholderHolding(code) {
+  const bh = db.prepare('SELECT quantity, cost FROM base_holdings WHERE code = ?').get(code);
+  if (!bh || bh['quantity'] !== 0 || bh['cost'] !== 0) return false;
+  const opening = db.prepare('SELECT quantity, cost FROM opening_holdings WHERE code = ?').get(code);
+  if (!opening || opening['quantity'] !== 0 || opening['cost'] !== 0) return false;
+  const txCount = db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE code = ?').get(code);
+  return (txCount?.['n'] ?? 0) === 0;
+}
+
 /** GET /api/transactions/:code — 查询某只股票的交易历史 */
 app.get('/api/transactions/:code', (c) => {
   const code = c.req.param('code').toUpperCase();
@@ -790,6 +826,11 @@ app.delete('/api/transactions/:id', (c) => {
   try {
     db.prepare('DELETE FROM transactions WHERE id = ?').run(id);
     replayHolding(code);
+    // 若撤销后变成“无持仓、无期初、无流水”的空占位行，则一并清理。
+    if (isPlaceholderHolding(code)) {
+      db.prepare('DELETE FROM base_holdings WHERE code = ?').run(code);
+      db.prepare('DELETE FROM opening_holdings WHERE code = ?').run(code);
+    }
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -797,14 +838,19 @@ app.delete('/api/transactions/:id', (c) => {
   }
 
   const updated = db.prepare('SELECT * FROM base_holdings WHERE code = ?').get(code);
-  console.log(`[tx] 撤销 #${id}，${code} 回放后: 成本 ${updated['cost'].toFixed(4)}, 持仓 ${updated['quantity']}`);
+  if (!updated) {
+    console.log(`[tx] 撤销 #${id}，${code} 已无持仓与流水，占位记录已清理`);
+    return c.json({ ok: true, deleted_id: id, code, new_cost: 0, new_quantity: 0, removed: true });
+  }
 
+  console.log(`[tx] 撤销 #${id}，${code} 回放后: 成本 ${updated['cost'].toFixed(4)}, 持仓 ${updated['quantity']}`);
   return c.json({
     ok: true,
     deleted_id: id,
     code,
     new_cost:     updated['cost'],
     new_quantity: updated['quantity'],
+    removed:      false,
   });
 });
 
@@ -970,8 +1016,7 @@ async function fetchIndicesDataDirect() {
   }
 
   // 周末或实时接口返回空值时，使用新浪日 K 线最近两个交易日的收盘价
-  const bjNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-  const isWeekend = bjNow.getDay() === 0 || bjNow.getDay() === 6;
+  const isWeekend = [0, 6].includes(beijingParts().day);
   const latestKlineMap = {};
   klineSymbols.forEach((sym, idx) => {
     const rows = (klineResults[idx] || [])
@@ -1008,9 +1053,9 @@ async function fetchIndicesDataDirect() {
 
   // 计算当月收益率百分比
   const monthChange = {};
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }));
-  const curYear = now.getFullYear();
-  const curMonth = now.getMonth() + 1;
+  const now = beijingParts();
+  const curYear = now.year;
+  const curMonth = now.month;
   
   // 确定上个月
   const prevYear = curMonth === 1 ? curYear - 1 : curYear;
@@ -1094,13 +1139,48 @@ app.get('/api/watchlist', (c) => {
   const holdingCodes = new Set(
     db.prepare('SELECT DISTINCT code FROM base_holdings WHERE quantity > 0').all().map(r => r['code'])
   );
-  const today = new Date().toLocaleString('en-CA', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).slice(0, 10);
+
+  // 持仓明细当前展示的快照（与 /api/holdings/latest 同一口径：最新一天）。
+  // 自选股里若包含持仓股，现价/昨收/今日涨跌一律以该快照为准，
+  // 保证同一只股票在“持仓明细”与“自选”里显示的涨跌幅完全一致，而不是各取自选快照重算。
+  const latestDateRow = db.prepare('SELECT date FROM holdings ORDER BY date DESC LIMIT 1').get();
+  const portfolioSnapByCode = new Map();
+  if (latestDateRow) {
+    for (const row of db.prepare(
+      'SELECT code, price, prev_close, day_pnl_pct FROM holdings WHERE date = ?'
+    ).all(latestDateRow['date'])) {
+      portfolioSnapByCode.set(row['code'], row);
+    }
+  }
 
   const result = items.map(item => {
     const code = item['code'];
-    // 取最新快照（当日优先，否则取最近一条）
+    const inHoldings = holdingCodes.has(code);
+    const portfolioSnap = portfolioSnapByCode.get(code);
+
+    // 持仓股：直接采用持仓快照（同一行数据），避免二次抓取或重算产生口径差异。
+    if (inHoldings && portfolioSnap) {
+      const addedPrice = item['added_price'];
+      const hpPrice = portfolioSnap['price'];
+      const totalPct = (hpPrice > 0 && addedPrice > 0)
+        ? `${((hpPrice - addedPrice) / addedPrice * 100).toFixed(2)}%`
+        : '0.00%';
+      return {
+        code,
+        name:        item['name'],
+        added_date:  item['added_date'],
+        added_price: addedPrice,
+        note:        item['note'],
+        current_price: hpPrice,
+        prev_close:    portfolioSnap['prev_close'],
+        day_pct:       portfolioSnap['day_pnl_pct'], // 与持仓明细“今日涨跌”同一字符串，显示逐字一致
+        total_pct:     totalPct,
+        in_holdings:   true,
+        snap_date:     latestDateRow['date'],
+      };
+    }
+
+    // 非持仓股：取自选行情快照（当日优先，否则取最近一条）
     const snap = db.prepare(
       'SELECT * FROM watchlist_price WHERE code = ? ORDER BY date DESC LIMIT 1'
     ).get(code);
@@ -1120,7 +1200,7 @@ app.get('/api/watchlist', (c) => {
       prev_close:    prevClose,
       day_pct:       dayPct,
       total_pct:     pctVsAdded,
-      in_holdings:   holdingCodes.has(code),
+      in_holdings:   inHoldings,
       snap_date:     snap ? snap['date'] : null,
     };
   });
@@ -1134,10 +1214,6 @@ app.post('/api/watchlist', async (c) => {
 
   const code = (body.code || '').trim().toUpperCase();
   if (!code) return c.json({ error: '证券代码不能为空' }, 400);
-
-  // 检查是否当前有效持仓中（持股数量 > 0）
-  const inHoldings = db.prepare('SELECT 1 FROM base_holdings WHERE code = ? AND quantity > 0 LIMIT 1').get(code);
-  if (inHoldings) return c.json({ error: `${code} 已在持仓中，无需重复追踪` }, 409);
 
   // 检查是否已在自选中
   const exists = db.prepare('SELECT 1 FROM watchlist WHERE code = ? LIMIT 1').get(code);
@@ -1154,9 +1230,7 @@ app.post('/api/watchlist', async (c) => {
   // 名称：前端覆盖 > 行情自动获取
   const name = (body.name || '').trim() || quote.name || code;
   const note = (body.note || '').trim();
-  const today = new Date().toLocaleString('en-CA', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).slice(0, 10);
+  const today = beijingDate();
 
   // sort_order = 当前最大序号 + 1，新入尾部
   const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM watchlist').get();

@@ -18,6 +18,7 @@ refreshBtn.addEventListener('click', async () => {
     await fetch('/api/holdings/refresh', { method: 'POST' });
     await Promise.all([
       loadLatest(),
+      loadWatchlist(),            // 服务端刷新同时会更新自选行情快照，这里一并重新拉取自选
       loadHistory(state.historyDays),
       loadIndices()
     ]);

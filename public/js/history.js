@@ -40,6 +40,13 @@ function renderIncomeCalendar(history) {
     historyChartInstance = null;
   }
 
+  // ECharts 依赖公共 CDN，离线/加载失败时给出降级提示而非抛错。
+  if (typeof echarts === 'undefined') {
+    calendarDom.innerHTML = '';
+    summary.textContent = '图表库未加载，请联网后刷新页面';
+    return;
+  }
+
   historyChartInstance = echarts.init(calendarDom);
 
   if (granularity === 'day') {
@@ -271,6 +278,12 @@ function renderHistoryBarChart(history) {
 
   const chartDom = document.getElementById('historyChart');
   if (!chartDom) return;
+
+  // ECharts 依赖公共 CDN，离线/加载失败时给出降级提示而非抛错。
+  if (typeof echarts === 'undefined') {
+    chartDom.innerHTML = '<div style="padding:24px;color:#64748b;text-align:center;font-size:13px;">图表库未加载，请联网后刷新页面</div>';
+    return;
+  }
 
   historyChartInstance = echarts.init(chartDom);
 
