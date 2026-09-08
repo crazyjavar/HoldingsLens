@@ -208,8 +208,9 @@ document.getElementById('wlAddBtn').addEventListener('click', async () => {
     await loadWatchlist(false);
     const container = document.getElementById('wlTableBody');
     if (container) {
+      // 新增自选默认置顶，滚动回列表顶部让新项可见
       setTimeout(() => {
-        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        container.scrollTo({ top: 0, behavior: 'smooth' });
       }, 50);
     }
   } catch (e) {

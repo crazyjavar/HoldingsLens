@@ -1232,9 +1232,10 @@ app.post('/api/watchlist', async (c) => {
   const note = (body.note || '').trim();
   const today = beijingDate();
 
-  // sort_order = 当前最大序号 + 1，新入尾部
-  const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM watchlist').get();
-  const sortOrder = ((maxOrder && maxOrder['m']) ?? -1) + 1;
+  // 新加入的自选默认排在最上面：取当前最小 sort_order − 1（表为空时从 0 开始），
+  // 列表按 sort_order 升序展示；手动拖拽排序时仍会按新顺序重排为 0..n-1。
+  const minOrder = db.prepare('SELECT MIN(sort_order) AS m FROM watchlist').get();
+  const sortOrder = ((minOrder && minOrder['m']) ?? 1) - 1;
 
   db.exec('BEGIN');
   try {
