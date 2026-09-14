@@ -818,7 +818,7 @@ app.get('/api/transactions/:code', (c) => {
   const base = db.prepare(
     'SELECT name, cost, quantity, updated_at FROM base_holdings WHERE code = ?'
   ).get(code) || null;
-  return c.json({ code, base, opening, transactions: rows });
+  return c.json({ code, base, opening, transactions: rows, fx_rate: cachedFxRate });
 });
 
 /** DELETE /api/transactions/:id — 撤销一笔交易（回放重算）*/

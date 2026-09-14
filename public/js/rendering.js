@@ -275,6 +275,84 @@ function renderTable(isSilent = false) {
   }
 }
 
+function getOrCreateTxTooltip() {
+  let tip = document.getElementById('txFloatingTooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'txFloatingTooltip';
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
+function positionTxTooltip(e, tip) {
+  const offset = 14;
+  let x = e.clientX + offset;
+  let y = e.clientY + offset;
+  const tipWidth = tip.offsetWidth || 220;
+  const tipHeight = tip.offsetHeight || 50;
+  if (x + tipWidth > window.innerWidth - 10) {
+    x = e.clientX - tipWidth - 10;
+  }
+  if (y + tipHeight > window.innerHeight - 10) {
+    y = e.clientY - tipHeight - 10;
+  }
+  tip.style.left = `${x}px`;
+  tip.style.top = `${y}px`;
+}
+
+function showTxTooltip(e, content) {
+  const tip = getOrCreateTxTooltip();
+  tip.innerHTML = content;
+  tip.classList.add('visible');
+  positionTxTooltip(e, tip);
+}
+
+function hideTxTooltip() {
+  const tip = document.getElementById('txFloatingTooltip');
+  if (tip) tip.classList.remove('visible');
+}
+
+function updateBannerActive(bannerEl, txData, currentPrice, isHK) {
+  if (!bannerEl) return;
+  const { isBuy, tradeDate, quantity, price, pctChange, profitCny } = txData;
+  const isUp = pctChange >= 0;
+  const isProfit = profitCny >= 0;
+  const unit = isHK ? ' HKD' : ' 元';
+
+  bannerEl.className = `detail-calc-banner active ${isUp ? 'positive' : 'negative'}`;
+  bannerEl.innerHTML = `
+    <div class="calc-banner-active">
+      <div class="calc-active-left">
+        <span class="calc-tx-badge ${isBuy ? 'buy' : 'sell'}">${isBuy ? '买入' : '卖出'}</span>
+        <span class="calc-tx-date">${escapeHtml(tradeDate)}</span>
+        <span class="calc-tx-desc">${numberFormatter.format(quantity)} 股 @ ${price.toFixed(4)}${unit}</span>
+        <span class="calc-tx-arrow">➔ 实时股价 <strong>${currentPrice.toFixed(4)}${unit}</strong></span>
+      </div>
+      <div class="calc-active-right">
+        <span class="calc-val-rate ${isUp ? 'positive' : 'negative'}">
+          ${isUp ? '▲ 上涨' : '▼ 下跌'} ${Math.abs(pctChange).toFixed(2)}%
+        </span>
+        <span class="calc-val-profit ${isProfit ? 'positive' : 'negative'}">
+          ${isBuy ? (isProfit ? '卖出可获利' : '卖出亏损') : (isProfit ? '现价高于卖出' : '现价低于卖出')}
+          <strong>${isProfit ? '+' : '-'}¥${Math.abs(profitCny).toFixed(2)}</strong>
+        </span>
+      </div>
+    </div>
+  `;
+}
+
+function resetBanner(bannerEl, currentPrice, isHK) {
+  if (!bannerEl) return;
+  bannerEl.className = 'detail-calc-banner';
+  bannerEl.innerHTML = `
+    <div class="calc-banner-default">
+      <span class="calc-icon">💡</span>
+      <span>悬停或点击任意一行流水，测算对比实时股价（<strong class="live-price-val">${currentPrice ? currentPrice.toFixed(4) + (isHK ? ' HKD' : ' 元') : '—'}</strong>）的涨跌幅与卖出收益</span>
+    </div>
+  `;
+}
+
 /** 异步加载并渲染某只股票的交易历史与期初信息 */
 async function loadHoldingDetail(code, name, cardEl) {
   try {
@@ -285,11 +363,31 @@ async function loadHoldingDetail(code, name, cardEl) {
     const opening = data.opening;
     const base = data.base;
     const isHK = code.endsWith('.HK');
+    const safeId = code.replace(/[^a-zA-Z0-9]/g, '_');
+
+    // 获取当前持仓实时股价与有效折算汇率
+    const holding = state.holdings.find(h => h.code === code);
+    const currentPrice = holding && holding.currentPrice !== '-' && !isNaN(Number(holding.currentPrice))
+      ? Number(holding.currentPrice)
+      : null;
+    const fxRate = isHK
+      ? (data.fx_rate || (holding && holding.quantity > 0 && currentPrice ? holding.marketValue / (holding.quantity * currentPrice) : 0.9148))
+      : 1.0;
 
     // 当前持仓基准提示
     const basePill = base
       ? `<span class="detail-opening-pill" title="当前持仓与成本">当前持仓: ${numberFormatter.format(base.quantity)} 股 | 加权成本 ${priceFormatter.format(toNum(base.cost))}</span>`
       : '';
+
+    // 顶部实时收益测算 Banner
+    const bannerHtml = `
+      <div class="detail-calc-banner" id="calcBanner_${safeId}">
+        <div class="calc-banner-default">
+          <span class="calc-icon">💡</span>
+          <span>悬停或点击任意一行流水，测算对比实时股价（<strong class="live-price-val">${currentPrice ? currentPrice.toFixed(4) + (isHK ? ' HKD' : ' 元') : '—'}</strong>）的涨跌幅与卖出收益</span>
+        </div>
+      </div>
+    `;
 
     // 交易记录表格或空状态
     let contentHtml = '';
@@ -319,11 +417,62 @@ async function loadHoldingDetail(code, name, cardEl) {
               ${txList.map(tx => {
                 const isBuy = tx.type === 'buy';
                 const isInit = tx.note === '初始持仓';
+
+                // 计算实时涨跌幅与卖出收益
+                let pctChange = null;
+                let profitCny = null;
+                let diffTagHtml = '';
+                let calcSummary = '';
+
+                if (currentPrice && tx.price > 0) {
+                  pctChange = ((currentPrice - tx.price) / tx.price) * 100;
+                  const currentValCny = tx.quantity * currentPrice * fxRate;
+                  profitCny = currentValCny - (tx.amount_cny || 0);
+
+                  const isUp = pctChange >= 0;
+                  const pctSign = isUp ? '+' : '';
+                  const upDownText = isUp ? '上涨' : '下跌';
+                  const pctStr = `${upDownText} ${Math.abs(pctChange).toFixed(2)}%`;
+
+                  let profitText = '';
+                  if (isBuy) {
+                    profitText = profitCny >= 0
+                      ? `卖出可获利 +¥${profitCny.toFixed(2)}`
+                      : `卖出亏损 -¥${Math.abs(profitCny).toFixed(2)}`;
+                  } else {
+                    profitText = profitCny >= 0
+                      ? `现价高于卖出价 +¥${profitCny.toFixed(2)}`
+                      : `现价低于卖出价 -¥${Math.abs(profitCny).toFixed(2)}`;
+                  }
+                  calcSummary = `${pctStr} · ${profitText}`;
+
+                  diffTagHtml = `
+                    <span class="detail-tx-diff-tag ${isUp ? 'positive' : 'negative'}" title="${escapeHtml(calcSummary)}">
+                      ${pctSign}${pctChange.toFixed(2)}%
+                    </span>
+                  `;
+                }
+
                 return `
-                  <tr>
+                  <tr class="detail-tx-item-row"
+                      data-tx-id="${tx.id}"
+                      data-tx-type="${tx.type}"
+                      data-trade-date="${escapeHtml(tx.trade_date)}"
+                      data-price="${tx.price}"
+                      data-quantity="${tx.quantity}"
+                      data-amount-cny="${tx.amount_cny}"
+                      data-pct="${pctChange !== null ? pctChange.toFixed(4) : ''}"
+                      data-profit="${profitCny !== null ? profitCny.toFixed(2) : ''}"
+                      data-calc-summary="${escapeHtml(calcSummary)}"
+                      title="${escapeHtml(calcSummary ? `【实时测算】${calcSummary}` : '')}">
                     <td>${escapeHtml(tx.trade_date)}</td>
                     <td><span class="detail-tx-tag ${isBuy ? 'buy' : 'sell'}">${isBuy ? '买入' : '卖出'}</span></td>
-                    <td>${tx.price.toFixed(4)}${isHK ? ' HKD' : ' 元'}</td>
+                    <td>
+                      <div class="tx-price-cell-wrap">
+                        <span>${tx.price.toFixed(4)}${isHK ? ' HKD' : ' 元'}</span>
+                        ${diffTagHtml}
+                      </div>
+                    </td>
                     <td>${numberFormatter.format(tx.quantity)}</td>
                     <td>¥${tx.amount_cny.toFixed(2)}</td>
                     ${isHK ? `<td class="detail-tx-fx" style="color:var(--muted)">${tx.fx_rate ? tx.fx_rate.toFixed(4) : '1.0000'}</td>` : ''}
@@ -351,8 +500,80 @@ async function loadHoldingDetail(code, name, cardEl) {
           <button class="detail-close-btn" type="button" data-close-code="${escapeHtml(code)}" title="收起交易明细">✕ 收起</button>
         </div>
       </div>
+      ${bannerHtml}
       ${contentHtml}
     `;
+
+    // 绑定流水行悬停与点击交互事件
+    const bannerEl = cardEl.querySelector(`#calcBanner_${safeId}`);
+    const rows = cardEl.querySelectorAll('tr.detail-tx-item-row');
+    let selectedRow = null;
+
+    rows.forEach(r => {
+      const isBuy = r.dataset.txType === 'buy';
+      const tradeDate = r.dataset.tradeDate;
+      const quantity = Number(r.dataset.quantity);
+      const price = Number(r.dataset.price);
+      const pctChange = r.dataset.pct !== '' ? Number(r.dataset.pct) : null;
+      const profitCny = r.dataset.profit !== '' ? Number(r.dataset.profit) : null;
+
+      if (pctChange === null || profitCny === null || !currentPrice) return;
+
+      const txData = { isBuy, tradeDate, quantity, price, pctChange, profitCny };
+      const isUp = pctChange >= 0;
+      const isProfit = profitCny >= 0;
+
+      const tooltipContent = `
+        <div class="tip-line-primary">
+          <span>${isBuy ? '🛒 买入记录' : '💰 卖出记录'}</span>
+          <span style="color:var(--muted);font-size:11px;">(${escapeHtml(tradeDate)})</span>
+        </div>
+        <div class="tip-line-calc">
+          <span style="color:${isUp ? 'var(--red)' : 'var(--green)'};">${isUp ? '▲ 上涨' : '▼ 下跌'} ${Math.abs(pctChange).toFixed(2)}%</span>
+          <span style="color:${isProfit ? 'var(--red)' : 'var(--green)'};">
+            ${isBuy ? (isProfit ? '卖出获利' : '卖出亏损') : (isProfit ? '现价高于卖出' : '现价低于卖出')}
+            ${isProfit ? '+' : '-'}¥${Math.abs(profitCny).toFixed(2)}
+          </span>
+        </div>
+      `;
+
+      r.addEventListener('mouseenter', (e) => {
+        rows.forEach(other => other.classList.remove('row-hovered'));
+        r.classList.add('row-hovered');
+        updateBannerActive(bannerEl, txData, currentPrice, isHK);
+        showTxTooltip(e, tooltipContent);
+      });
+
+      r.addEventListener('mousemove', (e) => {
+        const tip = getOrCreateTxTooltip();
+        positionTxTooltip(e, tip);
+      });
+
+      r.addEventListener('mouseleave', () => {
+        r.classList.remove('row-hovered');
+        hideTxTooltip();
+        if (selectedRow && selectedRow._txData) {
+          updateBannerActive(bannerEl, selectedRow._txData, currentPrice, isHK);
+        } else {
+          resetBanner(bannerEl, currentPrice, isHK);
+        }
+      });
+
+      r._txData = txData;
+      r.addEventListener('click', (e) => {
+        if (e.target.closest('.tx-undo-btn')) return;
+        if (selectedRow === r) {
+          selectedRow.classList.remove('row-selected');
+          selectedRow = null;
+          resetBanner(bannerEl, currentPrice, isHK);
+        } else {
+          if (selectedRow) selectedRow.classList.remove('row-selected');
+          selectedRow = r;
+          selectedRow.classList.add('row-selected');
+          updateBannerActive(bannerEl, txData, currentPrice, isHK);
+        }
+      });
+    });
   } catch (err) {
     cardEl.innerHTML = `
       <div class="detail-empty" style="color:var(--red);">
@@ -395,6 +616,7 @@ document.getElementById('holdingTable').addEventListener('click', e => {
   if (closeBtn) {
     e.stopPropagation();
     state.expandedHoldingCode = null;
+    hideTxTooltip();
     renderTable(true);
     return;
   }
@@ -411,6 +633,7 @@ document.getElementById('holdingTable').addEventListener('click', e => {
   const code = row.dataset.code;
   if (!code) return;
 
+  hideTxTooltip();
   if (state.expandedHoldingCode === code) {
     state.expandedHoldingCode = null;
   } else {

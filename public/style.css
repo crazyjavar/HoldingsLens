@@ -1038,6 +1038,190 @@
       border: 1px solid rgba(16, 185, 129, 0.25);
     }
 
+    /* ── 交易明细实时收益测算栏与浮层 ────────────────── */
+    .detail-calc-banner {
+      margin-bottom: 12px;
+      padding: 9px 14px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      font-size: 12px;
+      color: var(--muted);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+    }
+    .detail-calc-banner .calc-banner-default {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+    .detail-calc-banner .calc-banner-default .live-price-val {
+      color: var(--cyan);
+      font-family: var(--font-tech);
+      font-weight: 600;
+    }
+    .detail-calc-banner.active {
+      background: rgba(0, 240, 255, 0.05);
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+    .detail-calc-banner.active.positive {
+      background: rgba(244, 63, 94, 0.06);
+      border-color: rgba(244, 63, 94, 0.35);
+    }
+    .detail-calc-banner.active.negative {
+      background: rgba(16, 185, 129, 0.06);
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+    .calc-banner-active {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .calc-active-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--ink);
+    }
+    .calc-active-left .calc-tx-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .calc-active-left .calc-tx-badge.buy {
+      color: var(--red);
+      background: var(--red-soft);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+    }
+    .calc-active-left .calc-tx-badge.sell {
+      color: var(--green);
+      background: var(--green-soft);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+    .calc-active-left .calc-tx-desc {
+      font-family: var(--font-tech);
+      color: var(--muted);
+    }
+    .calc-active-left .calc-tx-arrow {
+      color: var(--cyan);
+      font-family: var(--font-tech);
+    }
+    .calc-active-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .calc-val-rate {
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font-tech);
+    }
+    .calc-val-profit {
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font-tech);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .calc-val-profit.positive {
+      color: var(--red);
+      background: rgba(244, 63, 94, 0.12);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+    }
+    .calc-val-profit.negative {
+      color: var(--green);
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+
+    /* 单价单元格内的微型涨跌指示徽章 */
+    .tx-price-cell-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+    .detail-tx-diff-tag {
+      display: inline-block;
+      padding: 0 4px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: var(--font-tech);
+      letter-spacing: 0.2px;
+      line-height: 16px;
+      cursor: help;
+    }
+    .detail-tx-diff-tag.positive {
+      color: var(--red);
+      background: rgba(244, 63, 94, 0.12);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+    }
+    .detail-tx-diff-tag.negative {
+      color: var(--green);
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+
+    /* 流水行悬停与选中高亮 */
+    tbody tr.detail-tx-item-row {
+      cursor: pointer;
+      transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    tbody tr.detail-tx-item-row:hover,
+    tbody tr.detail-tx-item-row.row-hovered {
+      background: rgba(0, 240, 255, 0.07) !important;
+    }
+    tbody tr.detail-tx-item-row.row-selected {
+      background: rgba(0, 240, 255, 0.12) !important;
+      outline: 1px solid rgba(0, 240, 255, 0.4);
+    }
+
+    /* 悬浮 Tooltip 气泡 */
+    #txFloatingTooltip {
+      position: fixed;
+      z-index: 99999;
+      pointer-events: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: rgba(12, 18, 36, 0.95);
+      border: 1px solid rgba(0, 240, 255, 0.35);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(0, 240, 255, 0.15);
+      backdrop-filter: blur(8px);
+      font-size: 12px;
+      color: var(--ink);
+      transition: opacity 0.12s ease;
+      opacity: 0;
+      white-space: nowrap;
+    }
+    #txFloatingTooltip.visible {
+      opacity: 1;
+    }
+    #txFloatingTooltip .tip-line-primary {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    #txFloatingTooltip .tip-line-calc {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-tech);
+      font-size: 13px;
+    }
+
     .name-cell { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
     .name-cell strong { color: var(--ink); }
     .code { color: var(--muted); font-size: 12px; }
