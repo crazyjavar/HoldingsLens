@@ -207,32 +207,159 @@ function renderTable(isSilent = false) {
   const tbody = document.getElementById('holdingTable');
   const empty = document.getElementById('emptyState');
   empty.hidden = rows.length > 0;
-  tbody.innerHTML = rows.map(x => `
-    <tr class="${x.code.endsWith('.HK') ? 'portfolio-hk-row' : ''}">
-      <td>
-        <div class="name-cell">
-          <strong>${escapeHtml(x.name)}${x.code.endsWith('.HK') ? '<span class="portfolio-market-badge">港股</span>' : ''}</strong>
-          <span class="code">${escapeHtml(x.code)}</span>
-        </div>
-      </td>
-      <td><span class="tag">${escapeHtml(x.category)}</span></td>
-      <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
-      <td>${state.hideValues ? '****' : (x.costPrice === '-' ? '-' : priceFormatter.format(toNum(x.costPrice)))}</td>
-      <td>${state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : priceFormatter.format(toNum(x.currentPrice)))}</td>
-      <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatDayPercent(x.dayPnlRate)}</td>
-      <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
-      <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
-      <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
-      <td>${formatPercent(x.weight)}</td>
-      <td>${escapeHtml(x.change)}</td>
-    </tr>`).join('');
+
+  // 构建表格 HTML：包含主行和可能展开的详情子行
+  const htmlParts = [];
+  for (const x of rows) {
+    const isExpanded = state.expandedHoldingCode === x.code;
+    htmlParts.push(`
+      <tr class="holding-row ${x.code.endsWith('.HK') ? 'portfolio-hk-row' : ''} ${isExpanded ? 'holding-row-active' : ''}" data-code="${escapeHtml(x.code)}">
+        <td>
+          <div class="name-cell">
+            <strong>${escapeHtml(x.name)}${x.code.endsWith('.HK') ? '<span class="portfolio-market-badge">港股</span>' : ''}</strong>
+            <span class="code">${escapeHtml(x.code)}</span>
+          </div>
+        </td>
+        <td><span class="tag">${escapeHtml(x.category)}</span></td>
+        <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
+        <td>${state.hideValues ? '****' : (x.costPrice === '-' ? '-' : priceFormatter.format(toNum(x.costPrice)))}</td>
+        <td>${state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : priceFormatter.format(toNum(x.currentPrice)))}</td>
+        <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatDayPercent(x.dayPnlRate)}</td>
+        <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
+        <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
+        <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
+        <td>${formatPercent(x.weight)}</td>
+        <td>
+          <button class="tx-badge-btn ${isExpanded ? 'expanded' : ''}" type="button" data-code="${escapeHtml(x.code)}" title="点击查看交易流水">
+            ${isExpanded ? '收起 ▴' : '明细 ▾'}
+          </button>
+        </td>
+      </tr>
+    `);
+
+    // 如果当前行已展开，插入详情子行
+    if (isExpanded) {
+      const safeId = x.code.replace(/[^a-zA-Z0-9]/g, '_');
+      htmlParts.push(`
+        <tr class="holding-detail-row" data-detail-code="${escapeHtml(x.code)}">
+          <td colspan="11">
+            <div class="holding-detail-card" id="detailCard_${safeId}">
+              <div class="detail-loading">
+                <span>⏳ 正在拉取【${escapeHtml(x.name)}】的交易记录...</span>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `);
+    }
+  }
+
+  tbody.innerHTML = htmlParts.join('');
+
+  // 若存在展开项，异步加载详情
+  if (state.expandedHoldingCode) {
+    const activeHolding = rows.find(r => r.code === state.expandedHoldingCode);
+    const safeId = state.expandedHoldingCode.replace(/[^a-zA-Z0-9]/g, '_');
+    const cardEl = document.getElementById(`detailCard_${safeId}`);
+    if (cardEl) {
+      loadHoldingDetail(state.expandedHoldingCode, activeHolding ? activeHolding.name : state.expandedHoldingCode, cardEl);
+    }
+  }
 
   // 若非静默刷新，执行 GSAP 行错开渐显位移动画
   if (!isSilent && rows.length > 0 && typeof gsap !== 'undefined') {
-    gsap.fromTo("#holdingTable tr", 
+    gsap.fromTo("#holdingTable tr.holding-row", 
       { autoAlpha: 0, y: 10 }, 
       { autoAlpha: 1, y: 0, duration: 0.35, stagger: 0.02, ease: "power2.out", clearProps: "all" }
     );
+  }
+}
+
+/** 异步加载并渲染某只股票的交易历史与期初信息 */
+async function loadHoldingDetail(code, name, cardEl) {
+  try {
+    const resp = await fetch(`/api/transactions/${encodeURIComponent(code)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const txList = data.transactions || [];
+    const opening = data.opening;
+    const base = data.base;
+    const isHK = code.endsWith('.HK');
+
+    // 当前持仓基准提示
+    const basePill = base
+      ? `<span class="detail-opening-pill" title="当前持仓与成本">当前持仓: ${numberFormatter.format(base.quantity)} 股 | 加权成本 ${priceFormatter.format(toNum(base.cost))}</span>`
+      : '';
+
+    // 交易记录表格或空状态
+    let contentHtml = '';
+    if (txList.length === 0) {
+      contentHtml = `
+        <div class="detail-empty">
+          <span>📝 暂无交易记录流水</span>
+        </div>
+      `;
+    } else {
+      contentHtml = `
+        <div class="detail-table-wrap">
+          <table class="detail-tx-table">
+            <thead>
+              <tr>
+                <th>交易日期</th>
+                <th>操作方向</th>
+                <th>成交单价</th>
+                <th>数量</th>
+                <th>发生金额 (CNY)</th>
+                ${isHK ? '<th class="detail-tx-fx">参考汇率</th>' : ''}
+                <th>备注说明</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${txList.map(tx => {
+                const isBuy = tx.type === 'buy';
+                const isInit = tx.note === '初始持仓';
+                return `
+                  <tr>
+                    <td>${escapeHtml(tx.trade_date)}</td>
+                    <td><span class="detail-tx-tag ${isBuy ? 'buy' : 'sell'}">${isBuy ? '买入' : '卖出'}</span></td>
+                    <td>${tx.price.toFixed(4)}${isHK ? ' HKD' : ' 元'}</td>
+                    <td>${numberFormatter.format(tx.quantity)}</td>
+                    <td>¥${tx.amount_cny.toFixed(2)}</td>
+                    ${isHK ? `<td class="detail-tx-fx" style="color:var(--muted)">${tx.fx_rate ? tx.fx_rate.toFixed(4) : '1.0000'}</td>` : ''}
+                    <td style="color:var(--muted);max-width:240px;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(tx.note || '')}">${escapeHtml(tx.note || '—')}</td>
+                    <td>${isInit ? '<span style="color:var(--muted);font-size:11px;">初始</span>' : `<button class="tx-undo-btn" data-id="${tx.id}" onclick="undoTx(this)">撤销</button>`}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    cardEl.innerHTML = `
+      <div class="detail-header">
+        <div class="detail-title">
+          <span>📈</span>
+          <strong>${escapeHtml(base?.name || name)}</strong>
+          <span class="detail-code">${escapeHtml(code)}</span>
+          <span class="detail-badge">${isHK ? '港股' : 'A股'}</span>
+          ${basePill}
+        </div>
+        <div class="detail-actions">
+          <button class="detail-close-btn" type="button" data-close-code="${escapeHtml(code)}" title="收起交易明细">✕ 收起</button>
+        </div>
+      </div>
+      ${contentHtml}
+    `;
+  } catch (err) {
+    cardEl.innerHTML = `
+      <div class="detail-empty" style="color:var(--red);">
+        <span>⚠️ 获取交易记录失败: ${escapeHtml(err.message)}</span>
+        <button class="detail-close-btn" type="button" data-close-code="${escapeHtml(code)}">关闭</button>
+      </div>
+    `;
   }
 }
 
@@ -246,17 +373,59 @@ export function render(isSilent = false) {
 // ── 持仓表搜索 / 排序 / 盈亏筛选事件 ─────────────────────────
 document.getElementById('searchInput').addEventListener('input', e => {
   state.search = e.target.value;
-  renderTable();
+  renderTable(true);
 });
 document.getElementById('sortSelect').addEventListener('change', e => {
   state.sort = e.target.value;
-  renderTable();
+  renderTable(true);
 });
 document.querySelectorAll('.segmented[aria-label="盈亏筛选"] button').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.segmented[aria-label="盈亏筛选"] button').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     state.filter = btn.dataset.filter;
-    renderTable();
+    renderTable(true);
   });
+});
+
+// ── 持仓行点击展开交易明细事件（事件委托）──────────────────────
+document.getElementById('holdingTable').addEventListener('click', e => {
+  // 若点击了收起按钮
+  const closeBtn = e.target.closest('.detail-close-btn');
+  if (closeBtn) {
+    e.stopPropagation();
+    state.expandedHoldingCode = null;
+    renderTable(true);
+    return;
+  }
+
+  // 若点击了详情卡片内的其他可交互元素（如撤销按钮），不要触发折叠
+  if (e.target.closest('.holding-detail-card')) {
+    return;
+  }
+
+  // 点击了主行或行内的明细按钮
+  const row = e.target.closest('tr.holding-row');
+  if (!row) return;
+
+  const code = row.dataset.code;
+  if (!code) return;
+
+  if (state.expandedHoldingCode === code) {
+    state.expandedHoldingCode = null;
+  } else {
+    state.expandedHoldingCode = code;
+  }
+
+  renderTable(true);
+
+  // 若展开了某一行，轻柔滚动至可见视野
+  if (state.expandedHoldingCode) {
+    setTimeout(() => {
+      const detailRow = document.querySelector(`tr.holding-detail-row[data-detail-code="${code}"]`);
+      if (detailRow) {
+        detailRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }, 50);
+  }
 });

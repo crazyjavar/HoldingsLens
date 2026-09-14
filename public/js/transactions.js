@@ -37,7 +37,7 @@ async function loadAllTx() {
   }));
   // 按交易日降序排序
   allTx.sort((a, b) => b.trade_date.localeCompare(a.trade_date) || b.id - a.id);
-  renderTxList(allTx.slice(0, 20)); // 最近20条
+  renderTxList(allTx.slice(0, 50)); // 最近50条
 }
 
 function renderTxList(list) {
@@ -50,6 +50,7 @@ function renderTxList(list) {
     const cls     = tx.type === 'buy' ? 'tx-buy' : 'tx-sell';
     const label   = tx.type === 'buy' ? '买入' : '卖出';
     const priceStr = tx.price.toFixed(4);
+    const isInit  = tx.note === '初始持仓';
     
     // 查找该股票的今日涨跌
     const holding = state.holdings.find(h => h.code === tx.code);
@@ -69,7 +70,7 @@ function renderTxList(list) {
       <td>${priceStr}</td>
       <td>¥${tx.amount_cny.toFixed(2)}</td>
       <td style="color:var(--muted)">${escapeHtml(tx.note || '—')}</td>
-      <td><button class="tx-undo-btn" data-id="${tx.id}" onclick="undoTx(this)">撤销</button></td>
+      <td>${isInit ? '<span style="color:var(--muted);font-size:11px;">初始</span>' : `<button class="tx-undo-btn" data-id="${tx.id}" onclick="undoTx(this)">撤销</button>`}</td>
     </tr>`;
   }).join('');
 }

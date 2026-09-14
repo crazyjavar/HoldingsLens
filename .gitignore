@@ -35,3 +35,5 @@ holdings.db
 *数据源*.csv
 *.bak
 *.backup
+*.backup*
+holdings.db*

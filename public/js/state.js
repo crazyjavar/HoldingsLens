@@ -5,6 +5,7 @@ export const state = {
   filter: 'all',
   search: '',
   sort: 'weight-desc',
+  expandedHoldingCode: null, // 当前展开交易记录的持仓股票代码
   // 使用足够大的数值保持与旧版后端兼容：旧版会截断为 365，新版可返回完整多年数据。
   historyDays: 5000,
   historyGranularity: 'day',

@@ -806,13 +806,19 @@ function isPlaceholderHolding(code) {
   return (txCount?.['n'] ?? 0) === 0;
 }
 
-/** GET /api/transactions/:code — 查询某只股票的交易历史 */
+/** GET /api/transactions/:code — 查询某只股票的交易历史与期初/基础持仓 */
 app.get('/api/transactions/:code', (c) => {
   const code = c.req.param('code').toUpperCase();
   const rows = db.prepare(
     'SELECT * FROM transactions WHERE code = ? ORDER BY trade_date DESC, created_at DESC'
   ).all(code);
-  return c.json({ code, transactions: rows });
+  const opening = db.prepare(
+    'SELECT cost, quantity, created_at FROM opening_holdings WHERE code = ?'
+  ).get(code) || null;
+  const base = db.prepare(
+    'SELECT name, cost, quantity, updated_at FROM base_holdings WHERE code = ?'
+  ).get(code) || null;
+  return c.json({ code, base, opening, transactions: rows });
 });
 
 /** DELETE /api/transactions/:id — 撤销一笔交易（回放重算）*/
@@ -820,6 +826,7 @@ app.delete('/api/transactions/:id', (c) => {
   const id = parseInt(c.req.param('id'), 10);
   const tx = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
   if (!tx) return c.json({ error: `交易记录 #${id} 不存在` }, 404);
+  if (tx['note'] === '初始持仓') return c.json({ error: '初始持仓记录不可撤销，请通过调整持仓操作修改' }, 400);
 
   const code = tx['code'];
   db.exec('BEGIN');

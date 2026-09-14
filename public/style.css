@@ -835,8 +835,208 @@
     td { font-family: var(--font-main); transition: background-color 0.15s, color 0.15s; }
     td:nth-child(3), td:nth-child(4), td:nth-child(5), td:nth-child(6), td:nth-child(7), td:nth-child(8), td:nth-child(9), td:nth-child(10), td:nth-child(11) { font-family: var(--font-tech); font-variant-numeric: tabular-nums; }
     tbody tr { transition: background-color 0.15s; }
-    tbody tr:hover { background: rgba(0, 240, 255, 0.035); }
-    tbody tr:hover td { color: var(--ink); }
+    tbody tr.holding-row { cursor: pointer; }
+    tbody tr.holding-row:hover { background: rgba(0, 240, 255, 0.05); }
+    tbody tr.holding-row:hover td { color: var(--ink); }
+    tbody tr.holding-row.holding-row-active {
+      background: rgba(0, 240, 255, 0.08) !important;
+    }
+    tbody tr.holding-row.holding-row-active td:first-child {
+      box-shadow: inset 3px 0 0 var(--cyan);
+    }
+
+    /* 展开/查看明细按钮 */
+    .tx-badge-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--cyan);
+      background: rgba(0, 240, 255, 0.08);
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .tx-badge-btn:hover {
+      background: rgba(0, 240, 255, 0.18);
+      border-color: rgba(0, 240, 255, 0.5);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0, 240, 255, 0.2);
+    }
+    .tx-badge-btn.expanded {
+      color: #fff;
+      background: rgba(0, 240, 255, 0.25);
+      border-color: var(--cyan);
+      box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+    }
+
+    /* ── 持仓展开详情卡片 ────────────────── */
+    .holding-detail-row td {
+      padding: 0 !important;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.3) !important;
+      background: transparent !important;
+    }
+    .holding-detail-card {
+      margin: 4px 8px 12px;
+      padding: 14px 18px;
+      border-radius: 8px;
+      background: linear-gradient(180deg, rgba(16, 24, 48, 0.95) 0%, rgba(9, 14, 30, 0.98) 100%);
+      border: 1px solid rgba(0, 240, 255, 0.25);
+      border-left: 3px solid var(--cyan);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.06);
+      animation: detailSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes detailSlideDown {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .detail-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .detail-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--ink);
+    }
+    .detail-title strong {
+      font-size: 14px;
+      letter-spacing: 0.3px;
+    }
+    .detail-code {
+      color: var(--muted);
+      font-family: var(--font-tech);
+      font-size: 12px;
+    }
+    .detail-badge {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .detail-opening-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+      font-family: var(--font-tech);
+    }
+    .detail-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .detail-close-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--muted);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .detail-close-btn:hover {
+      color: var(--ink);
+      border-color: rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .detail-loading, .detail-empty {
+      padding: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .detail-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 6px;
+      border: 1px dashed rgba(255, 255, 255, 0.08);
+    }
+
+    /* 内嵌交易表格 */
+    .detail-table-wrap {
+      overflow-x: auto;
+    }
+    .detail-tx-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+      font-size: 12px;
+    }
+    .detail-tx-table th, .detail-tx-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      text-align: left;
+      white-space: nowrap;
+    }
+    .detail-tx-table th {
+      color: var(--muted);
+      background: rgba(12, 18, 36, 0.8);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      position: static;
+      backdrop-filter: none;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .detail-tx-table th:nth-child(3), .detail-tx-table td:nth-child(3),
+    .detail-tx-table th:nth-child(4), .detail-tx-table td:nth-child(4),
+    .detail-tx-table th:nth-child(5), .detail-tx-table td:nth-child(5) {
+      text-align: right;
+    }
+    .detail-tx-table th:last-child, .detail-tx-table td:last-child {
+      text-align: center;
+    }
+    .detail-tx-table td:nth-child(3),
+    .detail-tx-table td:nth-child(4),
+    .detail-tx-table td:nth-child(5),
+    .detail-tx-table td.detail-tx-fx {
+      font-family: var(--font-tech);
+      font-variant-numeric: tabular-nums;
+    }
+    .detail-tx-table tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .detail-tx-tag {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .detail-tx-tag.buy {
+      color: var(--red);
+      background: var(--red-soft);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+    }
+    .detail-tx-tag.sell {
+      color: var(--green);
+      background: var(--green-soft);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
 
     .name-cell { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
     .name-cell strong { color: var(--ink); }
