@@ -1,8 +1,10 @@
 /**
- * fetcher.js — 行情抓取模块
+ * fetcher.ts — 行情抓取模块
  * 移植自 update_holdings.py，使用 Node 内置 fetch
  * 支持腾讯行情（主）和新浪行情（备用）
  */
+
+import type { QuoteResult, FxRateResult } from './types.js';
 
 // ── 字段索引常量 ──────────────────────────────────────────
 const CN_PREV_CLOSE_FIELD = 2;
@@ -15,7 +17,7 @@ const TENCENT_PREV_CLOSE_FIELD = 4;
 /**
  * 规范化解析腾讯/新浪的交易时间戳为 YYYY-MM-DD
  */
-function parseTradeDate(str) {
+function parseTradeDate(str: string | null | undefined): string | null {
   if (!str) return null;
   const clean = str.trim();
   if (clean.includes('/')) {
@@ -30,7 +32,7 @@ function parseTradeDate(str) {
 /**
  * 将证券代码转换为新浪格式（如 512170.SH → sh512170）
  */
-export function sinaSymbol(code) {
+export function sinaSymbol(code: string): string {
   const raw = code.trim();
   if (raw.endsWith('.SH')) return 'sh' + raw.slice(0, -3);
   if (raw.endsWith('.SZ')) return 'sz' + raw.slice(0, -3);
@@ -41,25 +43,27 @@ export function sinaSymbol(code) {
 /**
  * 解析新浪行情响应
  */
-function parseSinaResponse(body) {
-  const prices = {};
+function parseSinaResponse(body: string): Record<string, QuoteResult> {
+  const prices: Record<string, QuoteResult> = {};
   for (const line of body.split('\n')) {
     if (!line.trim() || !line.includes('="')) continue;
     const eqIdx = line.indexOf('="');
     const left = line.slice(0, eqIdx);
     const right = line.slice(eqIdx + 2).replace(/";?\s*$/, '');
-    const symbol = left.split('_').pop();
+    const symbol = left.split('_').pop()!;
     const fields = right.split(',');
-    let current, previousClose, lastTradeDate = null;
+    let current: number = 0;
+    let previousClose: number = 0;
+    let lastTradeDate: string | null = null;
     if ((symbol.startsWith('sh') || symbol.startsWith('sz')) && fields.length > CN_PRICE_FIELD) {
-      previousClose = parseFloat(fields[CN_PREV_CLOSE_FIELD]) || 0;
-      current = parseFloat(fields[CN_PRICE_FIELD]) || 0;
-      if (fields[30] && fields[30].includes('-')) {
-        lastTradeDate = fields[30].trim();
+      previousClose = parseFloat(fields[CN_PREV_CLOSE_FIELD]!) || 0;
+      current = parseFloat(fields[CN_PRICE_FIELD]!) || 0;
+      if (fields[30] && fields[30]!.includes('-')) {
+        lastTradeDate = fields[30]!.trim();
       }
     } else if (symbol.startsWith('hk') && fields.length > HK_PRICE_FIELD) {
-      previousClose = parseFloat(fields[HK_PREV_CLOSE_FIELD]) || 0;
-      current = parseFloat(fields[HK_PRICE_FIELD]) || 0;
+      previousClose = parseFloat(fields[HK_PREV_CLOSE_FIELD]!) || 0;
+      current = parseFloat(fields[HK_PRICE_FIELD]!) || 0;
       const dateField = fields.find(f => /^\d{4}[\/\-]\d{2}[\/\-]\d{2}$/.test(f.trim()));
       if (dateField) {
         lastTradeDate = dateField.trim().replace(/\//g, '-');
@@ -77,24 +81,24 @@ function parseSinaResponse(body) {
 /**
  * 解析腾讯行情响应（含股票名称 fields[1]）
  */
-function parseTencentResponse(body, withNames = false) {
-  const prices = {};
+function parseTencentResponse(body: string, withNames: boolean = false): Record<string, QuoteResult> {
+  const prices: Record<string, QuoteResult> = {};
   for (const entry of body.split(';')) {
     const e = entry.trim();
     if (!e || !e.includes('="')) continue;
     const eqIdx = e.indexOf('="');
     const left = e.slice(0, eqIdx);
     const right = e.slice(eqIdx + 2).replace(/";?\s*$/, '');
-    const symbol = left.split('_').pop();
+    const symbol = left.split('_').pop()!;
     const fields = right.split('~');
     if (fields.length <= TENCENT_PREV_CLOSE_FIELD) continue;
-    const current = parseFloat(fields[TENCENT_PRICE_FIELD]) || 0;
-    const previousClose = parseFloat(fields[TENCENT_PREV_CLOSE_FIELD]) || 0;
+    const current = parseFloat(fields[TENCENT_PRICE_FIELD]!) || 0;
+    const previousClose = parseFloat(fields[TENCENT_PREV_CLOSE_FIELD]!) || 0;
     if (current > 0) {
       const tradeDateStr = fields[30] ? parseTradeDate(fields[30]) : null;
       prices[symbol] = { current, previousClose, lastTradeDate: tradeDateStr };
       if (withNames && fields[1]) {
-        prices[symbol].name = fields[1].trim();
+        prices[symbol]!.name = fields[1]!.trim();
       }
     }
   }
@@ -104,7 +108,7 @@ function parseTencentResponse(body, withNames = false) {
 /**
  * 从新浪拉取行情
  */
-async function fetchFromSina(symbols) {
+async function fetchFromSina(symbols: string[]): Promise<Record<string, QuoteResult>> {
   const query = symbols.join(',');
   const url = `https://hq.sinajs.cn/list=${encodeURIComponent(query).replace(/%2C/g, ',')}`;
   const resp = await fetch(url, {
@@ -124,7 +128,7 @@ async function fetchFromSina(symbols) {
 /**
  * 从腾讯拉取行情
  */
-async function fetchFromTencent(symbols) {
+async function fetchFromTencent(symbols: string[]): Promise<Record<string, QuoteResult>> {
   const query = symbols.join(',');
   const url = `https://qt.gtimg.cn/q=${encodeURIComponent(query).replace(/%2C/g, ',')}`;
   const resp = await fetch(url, {
@@ -142,17 +146,17 @@ async function fetchFromTencent(symbols) {
 
 /**
  * 拉取行情，腾讯为主，新浪为备用
- * @param {string[]} symbols - 新浪格式的证券符号列表
- * @returns {Promise<Record<string, {current: number, previousClose: number}>>}
+ * @param symbols - 新浪格式的证券符号列表
+ * @returns Promise<Record<string, QuoteResult>>
  */
-export async function fetchPrices(symbols) {
+export async function fetchPrices(symbols: string[]): Promise<Record<string, QuoteResult>> {
   const sources = [
     { name: 'Tencent', fn: fetchFromTencent },
     { name: 'Sina', fn: fetchFromSina },
   ];
   let remaining = [...symbols];
-  const prices = {};
-  const errors = [];
+  const prices: Record<string, QuoteResult> = {};
+  const errors: string[] = [];
 
   for (const { name, fn } of sources) {
     if (remaining.length === 0) break;
@@ -160,8 +164,8 @@ export async function fetchPrices(symbols) {
       const fetched = await fn(remaining);
       Object.assign(prices, fetched);
       remaining = remaining.filter(s => !prices[s]);
-    } catch (err) {
-      errors.push(`${name}: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`${name}: ${(err as Error).message}`);
     }
   }
 
@@ -181,7 +185,7 @@ export async function fetchPrices(symbols) {
  * 获取最新 HKD → CNY 参考汇率。
  * Frankfurter 提供无需 API Key 的央行参考汇率聚合接口。
  */
-export async function fetchHkdCnyRate() {
+export async function fetchHkdCnyRate(): Promise<FxRateResult> {
   const resp = await fetch('https://api.frankfurter.dev/v2/rate/HKD/CNY', {
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(10000),
@@ -200,7 +204,7 @@ export async function fetchHkdCnyRate() {
 /**
  * 从腾讯拉取行情（携带股票名称，用于自选股添加）
  */
-async function fetchFromTencentWithNames(symbols) {
+async function fetchFromTencentWithNames(symbols: string[]): Promise<Record<string, QuoteResult>> {
   const query = symbols.join(',');
   const url = `https://qt.gtimg.cn/q=${encodeURIComponent(query).replace(/%2C/g, ',')}`;
   const resp = await fetch(url, {
@@ -218,16 +222,16 @@ async function fetchFromTencentWithNames(symbols) {
 
 /**
  * 拉取单只证券行情，包含股票名称（自选股添加专用）
- * @param {string} symbol - 新浪格式符号（如 sh600036）
- * @returns {Promise<{current: number, previousClose: number, name: string}>}
+ * @param symbol - 新浪格式符号（如 sh600036）
+ * @returns Promise<QuoteResult>
  */
-export async function fetchPriceWithName(symbol) {
+export async function fetchPriceWithName(symbol: string): Promise<QuoteResult> {
   try {
     const result = await fetchFromTencentWithNames([symbol]);
-    if (result[symbol]) return result[symbol];
-  } catch (_) {}
+    if (result[symbol]) return result[symbol]!;
+  } catch (err: unknown) {}
   // 腾讯失败则降级新浪（名称为空，由前端手动输入覆盖）
   const result = await fetchFromSina([symbol]);
-  if (result[symbol]) return { ...result[symbol], name: '' };
+  if (result[symbol]) return { ...result[symbol]!, name: '' };
   throw new Error(`未获取到现价: ${symbol}`);
 }

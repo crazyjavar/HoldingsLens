@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/opt/homebrew/bin/node</string>
-        <string>/Users/fei/holdings-analysis/server/server.js</string>
+        <string>/Users/fei/holdings-analysis/server/dist/server.js</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -22,6 +22,10 @@
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>NODE_ENV</key>
         <string>production</string>
+        <key>PORT</key>
+        <string>9123</string>
+        <key>HOLDINGS_DB_PATH</key>
+        <string>/Users/fei/holdings-analysis/holdings.db</string>
     </dict>
 
     <key>RunAtLoad</key>

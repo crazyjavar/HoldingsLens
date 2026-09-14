@@ -1,15 +1,23 @@
 {
   "name": "holdings-server",
   "version": "1.0.0",
-  "description": "持仓明细服务 - Hono + node:sqlite",
+  "description": "持仓明细服务 - Hono + node:sqlite + TypeScript",
   "type": "module",
-  "main": "server.js",
+  "main": "server.ts",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "tsx server.ts",
+    "dev": "tsx watch server.ts",
+    "build": "tsc",
+    "start:prod": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "hono": "^4.7.10"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "tsx": "^4.19.4",
+    "@types/node": "^22.15.0"
   }
 }
