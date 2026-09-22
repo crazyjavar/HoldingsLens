@@ -81,27 +81,41 @@ sqlite3 holdings.db ".backup 'holdings.db.backup'"
 
 ```text
 .
-├── holdings.db                      # SQLite 数据库
+├── holdings.db                      # SQLite 数据库（含 -wal / -shm 与历史备份）
 ├── com.fei.holdings-server.plist    # launchd 守护配置（本地运行）
+├── update_holdings.launchd.*.log    # launchd 定时任务日志
 ├── README.md
-├── public/                          # 前端（原生 HTML/CSS/JS，ES 模块）
+├── public/                          # 前端（原生 HTML/CSS/JS，ES 模块，无构建）
 │   ├── 持仓明细展示.html            # 页面入口
+│   ├── index.html                   # 指向上述入口的符号链接
 │   ├── app.js                       # 前端入口模块
 │   ├── style.css
 │   ├── favicon.svg
 │   ├── winning_character.png
 │   └── js/
-│       ├── state.js
-│       ├── utils.js
-│       ├── effects.js
-│       ├── indices.js
-│       ├── history.js
-│       ├── rendering.js
-│       ├── transactions.js
-│       └── watchlist.js
-└── server/
-    ├── server.js                    # 服务主入口（Hono + node:sqlite）
-    ├── fetcher.js                   # 行情/汇率抓取
+│       ├── state.js                 # 全局状态
+│       ├── utils.js                 # 工具函数
+│       ├── rendering.js             # 渲染
+│       ├── effects.js               # 动效（GSAP）
+│       ├── indices.js               # 指数
+│       ├── history.js               # 历史收益与自然月日历
+│       ├── transactions.js          # 买卖流水
+│       └── watchlist.js             # 自选股
+└── server/                          # 后端（TypeScript + tsx）
+    ├── server.ts                    # 服务主入口（Hono + node:sqlite）
+    ├── db.ts                        # 数据库连接、建表与迁移
+    ├── types.ts                     # 共享类型
+    ├── fetcher.ts                   # 行情/汇率抓取（腾讯/新浪、Frankfurter）
+    ├── refresh.ts                   # 定时刷新逻辑
+    ├── routes/
+    │   ├── holdings.ts
+    │   ├── indices.ts
+    │   ├── transactions.ts
+    │   └── watchlist.ts
+    ├── scripts/
+    │   └── recalibrate_hk_costs.ts  # 港股加权成本重算
+    ├── dist/                        # tsc 构建产物（npm run start:prod）
+    ├── tsconfig.json
     ├── package.json
     └── package-lock.json
 ```
