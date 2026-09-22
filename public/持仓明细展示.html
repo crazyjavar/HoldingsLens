@@ -370,6 +370,11 @@
           <h2>自选监控</h2>
           <button class="wl-add-toggle-btn" id="wlAddToggleBtn" title="添加自选股" type="button">＋</button>
         </div>
+        <!-- 股票 / 基金 页签切换 -->
+        <div class="wl-tabs" id="wlTabs" role="tablist">
+          <button class="wl-tab active" data-filter="stock" type="button" role="tab">股票 <span class="wl-tab-count" id="wlCountStock">0</span></button>
+          <button class="wl-tab" data-filter="fund" type="button" role="tab">基金 <span class="wl-tab-count" id="wlCountFund">0</span></button>
+        </div>
         <!-- 折叠的自选股添加表单 -->
         <div class="wl-add-panel" id="wlAddPanel" style="display:none;">
           <div class="wl-add-form-vertical">

@@ -19,6 +19,30 @@ function pctBadgeValueOnly(totalPct) {
 // 全局自选股列表状态（拖拽用）
 let wlList = [];
 
+// ── 股票 / 基金 页签过滤 ─────────────────────────────────────
+const isFundCode = code => String(code || '').toUpperCase().endsWith('.OF');
+let wlTab = (() => {
+  try { return localStorage.getItem('wlTab') === 'fund' ? 'fund' : 'stock'; } catch (_) { return 'stock'; }
+})();
+
+function syncTabUI() {
+  document.querySelectorAll('#wlTabs .wl-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === wlTab);
+  });
+}
+
+function updateTabCounts(list) {
+  const stock = list.filter(it => !isFundCode(it.code)).length;
+  const fund  = list.length - stock;
+  const sEl = document.getElementById('wlCountStock');
+  const fEl = document.getElementById('wlCountFund');
+  if (sEl) sEl.textContent = stock;
+  if (fEl) fEl.textContent = fund;
+}
+
+// 当前页签下可见的自选项
+const visibleWlItems = list => list.filter(it => (wlTab === 'fund') === isFundCode(it.code));
+
 function marketBadge(code) {
   if (code.endsWith('.HK')) return '<span class="wl-market-badge hk">港</span>';
   if (code.endsWith('.SH')) return '<span class="wl-market-badge sh">沪</span>';
@@ -31,13 +55,19 @@ function renderWatchlist(list, isSilent = false) {
   wlList = list;
   const container = document.getElementById('wlTableBody');
   const empty = document.getElementById('wlEmpty');
-  if (!list.length) {
+  updateTabCounts(list);
+
+  const visible = visibleWlItems(list);
+  if (!visible.length) {
     container.innerHTML = '';
     empty.hidden = false;
+    empty.textContent = list.length
+      ? `「${wlTab === 'fund' ? '基金' : '股票'}」下暂无自选项，切换页签或点击“＋”添加`
+      : '暂无自选股，点击“＋”开始监控';
     return;
   }
   empty.hidden = true;
-  container.innerHTML = list.map(item => {
+  container.innerHTML = visible.map(item => {
     const isHK     = item.code.endsWith('.HK');
     const isFund   = item.code.endsWith('.OF');
     const priceStr = item.current_price != null ? item.current_price.toFixed(isFund ? 4 : 3) : '—';
@@ -75,7 +105,7 @@ function renderWatchlist(list, isSilent = false) {
   initDragSort(container);
 
   // 若非静默刷新，执行 GSAP Stagger 入场动效
-  if (!isSilent && list.length > 0 && typeof gsap !== 'undefined') {
+  if (!isSilent && visible.length > 0 && typeof gsap !== 'undefined') {
     gsap.fromTo("#wlTableBody .wl-item", 
       { autoAlpha: 0, x: 15 }, 
       { autoAlpha: 1, x: 0, duration: 0.4, stagger: 0.03, ease: "power2.out", clearProps: "all" }
@@ -101,6 +131,21 @@ export async function deleteWatchitem(btn) {
   } catch (e) { alert('网络错误'); btn.disabled = false; }
 }
 window.deleteWatchitem = deleteWatchitem;
+
+// ── 股票 / 基金 页签切换 ─────────────────────────────────────
+(function initWlTabs() {
+  const tabs = document.getElementById('wlTabs');
+  if (!tabs) return;
+  syncTabUI(); // 恢复上次选中的页签
+  tabs.addEventListener('click', e => {
+    const btn = e.target.closest('.wl-tab');
+    if (!btn || btn.dataset.filter === wlTab) return;
+    wlTab = btn.dataset.filter;
+    try { localStorage.setItem('wlTab', wlTab); } catch (_) {}
+    syncTabUI();
+    renderWatchlist(wlList, false); // 带入场动效重绘
+  });
+})();
 
 // ── 拖拽排序 ──────────────────────────────────────────────
 function initDragSort(container) {
@@ -141,9 +186,15 @@ function initDragSort(container) {
         row.before(dragSrc);
       }
 
-      // 提取新顺序的 code 列表，持久化到后端
-      const newOrder = [...container.querySelectorAll('.wl-item')]
-        .map(r => r.dataset.code);
+      // 提取当前页签下可见项的新顺序，合并回完整顺序后再持久化。
+      // 只提交可见项会让另一个页签的 sort_order 与它们撞号，因此必须带上全部 code。
+      const visibleOrder = [...container.querySelectorAll('.wl-item')].map(r => r.dataset.code);
+      const visibleSet = new Set(visibleOrder);
+      let vi = 0;
+      const newOrder = wlList.map(it => (visibleSet.has(it.code) ? visibleOrder[vi++] : it.code));
+      wlList = newOrder
+        .map(code => wlList.find(it => it.code === code))
+        .filter(Boolean);
       try {
         await fetch('/api/watchlist/reorder', {
           method: 'PATCH',
@@ -216,6 +267,13 @@ document.getElementById('wlAddBtn').addEventListener('click', async () => {
     document.getElementById('wlCode').value = '';
     document.getElementById('wlName').value = '';
     document.getElementById('wlNote').value = '';
+    // 新标的若不属于当前页签（如在“股票”页签下加了基金），自动切过去让用户看得见
+    const targetTab = isFundCode(code) ? 'fund' : 'stock';
+    if (targetTab !== wlTab) {
+      wlTab = targetTab;
+      try { localStorage.setItem('wlTab', wlTab); } catch (_) {}
+      syncTabUI();
+    }
     await loadWatchlist(false);
     const container = document.getElementById('wlTableBody');
     if (container) {
