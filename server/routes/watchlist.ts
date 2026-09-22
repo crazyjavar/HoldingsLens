@@ -22,9 +22,12 @@ stockSearch.get('/search', async (c) => {
     if (!match) return c.json({ list: [] });
 
     const items = match[1].split(';').filter(Boolean);
-    const list = items.map((item): { code: string; name: string } | null => {
+    const seen = new Set<string>();
+    const list: { code: string; name: string }[] = [];
+
+    for (const item of items) {
       const parts = item.split(',');
-      if (parts.length < 5) return null;
+      if (parts.length < 5) continue;
       
       const type = parts[1];
       const fullCode = parts[3].toLowerCase();
@@ -43,12 +46,18 @@ stockSearch.get('/search', async (c) => {
           rawNum = '0' + rawNum;
         }
         normCode = rawNum.toUpperCase() + '.HK';
+      } else if (fullCode.startsWith('of') || ['21', '22', '23', '201', '203'].includes(type)) { // 场外公募基金
+        const rawNum = fullCode.startsWith('of') ? fullCode.slice(2) : parts[2];
+        normCode = rawNum.toUpperCase() + '.OF';
       } else {
-        return null;
+        continue;
       }
       
-      return { code: normCode, name };
-    }).filter(Boolean);
+      if (normCode && !seen.has(normCode)) {
+        seen.add(normCode);
+        list.push({ code: normCode, name });
+      }
+    }
 
     return c.json({ list });
   } catch (err: unknown) {

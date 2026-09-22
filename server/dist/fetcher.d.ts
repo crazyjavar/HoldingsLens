@@ -9,7 +9,7 @@ import type { QuoteResult, FxRateResult } from './types.js';
  */
 export declare function sinaSymbol(code: string): string;
 /**
- * 拉取行情，腾讯为主，新浪为备用
+ * 拉取行情：股票走腾讯主/新浪备；公募基金走新浪实时估值主/腾讯备
  * @param symbols - 新浪格式的证券符号列表
  * @returns Promise<Record<string, QuoteResult>>
  */
@@ -20,8 +20,8 @@ export declare function fetchPrices(symbols: string[]): Promise<Record<string, Q
  */
 export declare function fetchHkdCnyRate(): Promise<FxRateResult>;
 /**
- * 拉取单只证券行情，包含股票名称（自选股添加专用）
- * @param symbol - 新浪格式符号（如 sh600036）
+ * 拉取单只证券行情，包含标的名称（自选股添加专用）
+ * @param symbol - 新浪格式符号（如 sh600036、of002708）
  * @returns Promise<QuoteResult>
  */
 export declare function fetchPriceWithName(symbol: string): Promise<QuoteResult>;

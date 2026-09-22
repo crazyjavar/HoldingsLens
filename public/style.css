@@ -582,6 +582,7 @@
     .wl-market-badge.hk  { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.35); }
     .wl-market-badge.sh  { background: rgba(59,130,246,0.12);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
     .wl-market-badge.sz  { background: rgba(16,185,129,0.12);  color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+    .wl-market-badge.of  { background: rgba(168,85,247,0.15); color: #c084fc; border: 1px solid rgba(168,85,247,0.35); }
 
     /* 拖拽手柄 */
     .wl-drag-handle {
@@ -1037,6 +1038,11 @@
       background: var(--green-soft);
       border: 1px solid rgba(16, 185, 129, 0.25);
     }
+    .detail-tx-tag.dividend {
+      color: #f59e0b;
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
 
     /* ── 交易明细实时收益测算栏与浮层 ────────────────── */
     .detail-calc-banner {
@@ -1481,6 +1487,7 @@
     .wl-market-badge.hk { color: #f59e0b; background: rgba(245, 158, 11, 0.15); }
     .wl-market-badge.sh { color: #ef4444; background: rgba(239, 68, 68, 0.15); }
     .wl-market-badge.sz { color: #3b82f6; background: rgba(59, 130, 246, 0.15); }
+    .wl-market-badge.of { color: #a855f7; background: rgba(168, 85, 247, 0.15); }
 
     .wl-item-right {
       display: flex;

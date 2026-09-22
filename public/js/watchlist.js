@@ -23,6 +23,7 @@ function marketBadge(code) {
   if (code.endsWith('.HK')) return '<span class="wl-market-badge hk">港</span>';
   if (code.endsWith('.SH')) return '<span class="wl-market-badge sh">沪</span>';
   if (code.endsWith('.SZ')) return '<span class="wl-market-badge sz">深</span>';
+  if (code.endsWith('.OF')) return '<span class="wl-market-badge of">基</span>';
   return '';
 }
 
@@ -38,14 +39,15 @@ function renderWatchlist(list, isSilent = false) {
   empty.hidden = true;
   container.innerHTML = list.map(item => {
     const isHK     = item.code.endsWith('.HK');
-    const priceStr = item.current_price != null ? item.current_price.toFixed(3) : '—';
+    const isFund   = item.code.endsWith('.OF');
+    const priceStr = item.current_price != null ? item.current_price.toFixed(isFund ? 4 : 3) : '—';
     const dayClass = item.day_pct ? (parseFloat(item.day_pct) >= 0 ? 'positive' : 'negative') : '';
     const dayStr   = item.day_pct || '—';
     const totalPctVal = toNum(item.total_pct);
     const compareClass = totalPctVal >= 0 ? 'positive' : 'negative';
     
     return `
-      <div class="wl-item ${isHK ? 'hk-row' : ''}" draggable="true" data-code="${escapeHtml(item.code)}">
+      <div class="wl-item ${isHK ? 'hk-row' : ''} ${isFund ? 'of-row' : ''}" draggable="true" data-code="${escapeHtml(item.code)}">
         <div class="wl-item-left">
           <span class="wl-drag-handle" title="拖拽排序">⠿</span>
           <div class="wl-name-box">
@@ -168,15 +170,19 @@ document.getElementById('wlAddBtn').addEventListener('click', async () => {
   let code = normalizeCode(raw.toUpperCase());
   let finalName = nameInput;
 
-  // 若不能解析为常规格式，说明用户输入的是公司名称或拼音，在此通过接口模糊检索
+  // 若不能解析为常规格式，说明用户输入的是标的名称或拼音，在此通过接口模糊检索
   if (!code) {
     try {
       const resp = await fetch(`/api/stocks/search?q=${encodeURIComponent(raw)}`);
       if (resp.ok) {
         const data = await resp.json();
         if (data.list && data.list.length > 0) {
-          code = data.list[0].code;
-          finalName = finalName || data.list[0].name;
+          const fundMatch = data.list.find(i => i.code.endsWith('.OF'));
+          const selected = (/(基金|混合|股票型|债券|ETF联接|QDII|指数|大摩|中欧|易方达|广发|华夏|嘉实|富国|博时|汇添富|南方)/.test(nameInput) && fundMatch)
+            ? fundMatch
+            : data.list[0];
+          code = selected.code;
+          finalName = finalName || selected.name;
           document.getElementById('wlCode').value = code;
           document.getElementById('wlName').value = finalName;
         }
@@ -184,10 +190,15 @@ document.getElementById('wlAddBtn').addEventListener('click', async () => {
     } catch (e) {
       console.error('Submit suggest error:', e);
     }
+  } else if (code.endsWith('.SZ') && nameInput) {
+    // 若匹配为深市股票代码（如 002708.SZ），但名称明确为公募基金，自动识别为 .OF 基金
+    if (/(基金|混合|股票型|债券|ETF联接|QDII|大摩|中欧|易方达|广发|华夏|嘉实|富国|博时|汇添富|南方)/.test(nameInput)) {
+      code = code.slice(0, 6) + '.OF';
+    }
   }
 
   if (!code) {
-    errEl.textContent = '无法匹配到对应股票：A股请输6位数字或中文名称，港股请输5位数字或中文名称';
+    errEl.textContent = '无法匹配到对应标的：A股/基金请输6位代码或中文名称，港股请输5位代码或中文名称';
     btn.disabled = false;
     btn.textContent = '➕ 确认添加';
     return;
@@ -344,21 +355,33 @@ if (wlCodeInput && wlSuggestBox) {
  * 000858       → 000858.SZ（0/2/3 开头）
  * 600036       → 600036.SH（6/688 开头）
  * 09626        → 09626.HK（5位纯数字，港股）
+ * 002708.OF    → 002708.OF（场外基金）
+ * OF002708     → 002708.OF
+ * 014030       → 014030.OF（01/02 开头必为基金）
  * 已含后缀则原样返回
  */
 function normalizeCode(raw) {
   if (!raw) return '';
+  const clean = raw.trim().toUpperCase();
   // 已包含后缀，直接返回
-  if (/\.(SH|SZ|HK)$/i.test(raw)) return raw.toUpperCase();
+  if (/\.(SH|SZ|HK|OF)$/i.test(clean)) return clean;
+  // 支持前缀格式如 OF002708, JJ002708
+  if (/^(OF|JJ)\d{6}$/i.test(clean)) return clean.slice(2) + '.OF';
+  // 支持 .JJ 后缀
+  if (/^\d{6}\.JJ$/i.test(clean)) return clean.slice(0, 6) + '.OF';
+
   // 纯数字判断
-  if (/^\d+$/.test(raw)) {
-    if (raw.length === 6) {
-      const prefix = raw[0];
-      if ('69'.includes(prefix)) return raw + '.SH';      // 沪市：6xxxx / 科创：688xxx
-      if ('0123'.includes(prefix)) return raw + '.SZ';   // 深市：0xxxx / 创业板：3xxxx
+  if (/^\d+$/.test(clean)) {
+    if (clean.length === 6) {
+      const prefix = clean[0];
+      const prefix2 = clean.slice(0, 2);
+      // 01xxxx, 02xxxx 必然是场外基金代码（A股股票无 01/02 开头）
+      if (prefix2 === '01' || prefix2 === '02') return clean + '.OF';
+      if ('69'.includes(prefix)) return clean + '.SH';      // 沪市：6xxxx / 科创：688xxx
+      if ('0123'.includes(prefix)) return clean + '.SZ';   // 深市：0xxxx / 创业板：3xxxx
       return '';  // 无法判断
     }
-    if (raw.length === 5) return raw + '.HK';            // 港股 5 位
+    if (clean.length === 5) return clean + '.HK';            // 港股 5 位
     return '';
   }
   return '';

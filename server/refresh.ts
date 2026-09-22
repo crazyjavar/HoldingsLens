@@ -49,7 +49,15 @@ export async function refreshHoldings(options: { force?: boolean } = {}): Promis
 
     // 开盘前或 A/H 股同时休市时，行情源只会返回上一交易日。
     // 当所有可判定的行情日期都不是今天且非强制刷新时，不写入今日快照。
-    const quoteDates = Object.values(quotes).map(q => q.lastTradeDate).filter((d): d is string => d !== null);
+    // 注意：公募基金（of...）在日间恒为上一交易日（T-1）结算净值，判定开市时仅以股票/ETF标的日期为准。
+    const stockTradeDates = Object.entries(quotes)
+      .filter(([sym]) => !sym.startsWith('of'))
+      .map(([, q]) => q.lastTradeDate)
+      .filter((d): d is string => d !== null);
+    const quoteDates = stockTradeDates.length > 0
+      ? stockTradeDates
+      : Object.values(quotes).map(q => q.lastTradeDate).filter((d): d is string => d !== null);
+
     if (!force && quoteDates.length > 0 && !quoteDates.includes(today)) {
       const uniqueDates = [...new Set(quoteDates)];
       console.log(`[refresh] 当前无已开盘市场（行情日期: ${uniqueDates.join(', ')}），跳过写入`);
@@ -113,12 +121,16 @@ export async function refreshHoldings(options: { force?: boolean } = {}): Promis
           : '0.000%';
       }
 
-      const costVal  = Math.round(cost * quantity * fx * 100) / 100;
+      // 注意：base_holdings 中的 cost 统一为每股人民币成本（RMB/股）
+      // 港股已在交易流水回放时按买入汇率与发生金额进行了人民币加权均摊，
+      // 因此成本金额直接为 cost * quantity，切勿再乘以当期汇率 fx（否则会抹杀历史汇率变动）。
+      const costVal  = Math.round(cost * quantity * 100) / 100;
       const pnl      = Math.round((market - costVal) * 100) / 100;
       // 休市标的现价统一取 prevCloseToUse，与 market 保持同一口径，避免金额与比例不一致。
       const effectivePrice = isClosedToday ? prevCloseToUse : current;
-      const pnlRate  = cost > 0
-        ? `${((effectivePrice - cost) / cost * 100).toFixed(2)}%`
+      // 累计收益率统一使用累计盈亏金额除以总成本金额，真实涵盖股价与汇率变动
+      const pnlRate  = costVal > 0
+        ? `${(pnl / costVal * 100).toFixed(2)}%`
         : '0.00%';
 
       totalMarket    += market;

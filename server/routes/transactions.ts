@@ -21,9 +21,9 @@ transactions.post('/', async (c) => {
   const note      = String(body.note || '').trim();
 
   if (!code)              return c.json({ error: '证券代码不能为空' }, 400);
-  if (!['buy','sell'].includes(type)) return c.json({ error: 'type 必须为 buy 或 sell' }, 400);
+  if (!['buy','sell','dividend'].includes(type)) return c.json({ error: 'type 必须为 buy, sell 或 dividend' }, 400);
   if (!tradeDate)         return c.json({ error: '交易日期不能为空' }, 400);
-  if (!(quantity > 0))    return c.json({ error: '股数必须大于0' }, 400);
+  if (type !== 'dividend' && !(quantity > 0)) return c.json({ error: '买卖股数必须大于0' }, 400);
   if (!(amountCny > 0))   return c.json({ error: '金额必须大于0' }, 400);
 
   // 查当前持仓；新标的先获取名称，数据库写入稍后统一进入事务
@@ -31,7 +31,7 @@ transactions.post('/', async (c) => {
   let isNewHolding = false;
   if (!bh) {
     if (type !== 'buy') {
-      return c.json({ error: `无法卖出未持仓的证券 ${code}` }, 400);
+      return c.json({ error: `无法操作未持仓的证券 ${code}` }, 400);
     }
 
     // 自动获取新买入证券的中文名称
@@ -61,9 +61,10 @@ transactions.post('/', async (c) => {
   const isHK  = code.endsWith('.HK');
   if (isHK) await refreshFxRate();
   const fxRate = isHK ? getFxRate() : 1.0;
-  // 港股: CNY / 汇率 / 股数 = HKD 每股; A股: CNY / 股数 = CNY 每股
-  // 保留 4 位小数，避免浮点除法产生超长小数污染成本回放与展示。
-  const price = Math.round((amountCny / fxRate / quantity) * 10000) / 10000;
+  // 港股: CNY / 汇率 / 股数 = HKD 每股; A股: CNY / 股数 = CNY 每股; 分红时若数量为0则单价取0或传入price
+  const price = (quantity > 0)
+    ? Math.round((amountCny / fxRate / quantity) * 10000) / 10000
+    : Number(body.price || 0);
 
   // 新增流水、创建新标的、回放持仓必须全部成功或全部回滚
   db.exec('BEGIN');
@@ -108,12 +109,16 @@ transactions.post('/', async (c) => {
 /**
  * 回放重算某只股票的 base_holdings
  * 从 SQLite 期初持仓出发，按时间顺序叠加所有交易记录
+ * 对于港股（.HK），买入时以实际结算扣除的人民币金额 amount_cny 累加均摊，
+ * 从而确保 base_holdings.cost 记录的是真实的人民币每股成本（RMB/股）。
  */
 function replayHolding(code: string): void {
   const opening = db.prepare<OpeningHolding>('SELECT cost, quantity FROM opening_holdings WHERE code = ?').get(code);
   if (!opening) throw new Error(`${code} 缺少期初持仓记录`);
   let cost     = opening.cost;
   let quantity = opening.quantity;
+
+  const isHK = code.endsWith('.HK');
 
   // 按交易日期升序回放所有交易
   const txList = db.prepare<Transaction>(
@@ -124,13 +129,24 @@ function replayHolding(code: string): void {
     const txQty   = tx.quantity;
     const txPrice = tx.price;
     if (tx.type === 'buy') {
-      // 加权平均成本
       const newQty  = quantity + txQty;
-      cost     = newQty > 0 ? (cost * quantity + txPrice * txQty) / newQty : cost;
+      if (isHK) {
+        // 港股：加权平均每股人民币成本
+        // 真实买入金额：优先使用当时券商结算扣款的 amount_cny；若没有则回退为 price * quantity * fx_rate
+        const buyAmountCny = tx.amount_cny > 0 ? tx.amount_cny : (txPrice * txQty * (tx.fx_rate || 1.0));
+        cost = newQty > 0 ? (cost * quantity + buyAmountCny) / newQty : cost;
+      } else {
+        // A 股/基金：人民币加权
+        cost = newQty > 0 ? (cost * quantity + txPrice * txQty) / newQty : cost;
+      }
       quantity = newQty;
-    } else {
-      // 卖出：数量减少，成本不变
+    } else if (tx.type === 'sell') {
+      // 卖出：数量减少，每股成本保持不变
       quantity = Math.max(0, quantity - txQty);
+    } else if (tx.type === 'dividend') {
+      // 现金分红：冲减持仓人民币成本本金（数量不变）
+      const divCny = tx.amount_cny || 0;
+      cost = quantity > 0 ? Math.max(0, (cost * quantity - divCny) / quantity) : cost;
     }
   }
 
@@ -165,7 +181,32 @@ transactions.get('/:code', (c) => {
   const base = db.prepare<{ name: string, cost: number, quantity: number, updated_at: string }>(
     'SELECT name, cost, quantity, updated_at FROM base_holdings WHERE code = ?'
   ).get(code) || null;
-  return c.json({ code, base, opening, transactions: rows, fx_rate: getFxRate() });
+
+  // 针对港股，额外计算港币原币加权成本（cost_hkd），供前端双币展示
+  let costHkd: number | null = null;
+  if (code.endsWith('.HK')) {
+    let hkdQty = opening?.quantity || 0;
+    let hkdCost = opening?.cost || 0;
+    const ascTxs = [...rows].reverse();
+    for (const tx of ascTxs) {
+      if (tx.type === 'buy') {
+        const nq = hkdQty + tx.quantity;
+        hkdCost = nq > 0 ? (hkdCost * hkdQty + tx.price * tx.quantity) / nq : hkdCost;
+        hkdQty = nq;
+      } else if (tx.type === 'sell') {
+        hkdQty = Math.max(0, hkdQty - tx.quantity);
+      }
+    }
+    costHkd = Math.round(hkdCost * 10000) / 10000;
+  }
+
+  return c.json({
+    code,
+    base: base ? { ...base, cost_hkd: costHkd } : null,
+    opening,
+    transactions: rows,
+    fx_rate: getFxRate(),
+  });
 });
 
 /** DELETE /:id — 撤销一笔交易（回放重算）*/

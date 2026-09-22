@@ -212,18 +212,21 @@ function renderTable(isSilent = false) {
   const htmlParts = [];
   for (const x of rows) {
     const isExpanded = state.expandedHoldingCode === x.code;
+    const isHK = x.code.endsWith('.HK');
+    const costText = state.hideValues ? '****' : (x.costPrice === '-' ? '-' : (isHK ? `¥${priceFormatter.format(toNum(x.costPrice))}` : priceFormatter.format(toNum(x.costPrice))));
+    const priceText = state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : (isHK ? `${priceFormatter.format(toNum(x.currentPrice))}<span style="font-size:0.75em;opacity:0.75;margin-left:2px;">HKD</span>` : priceFormatter.format(toNum(x.currentPrice))));
     htmlParts.push(`
-      <tr class="holding-row ${x.code.endsWith('.HK') ? 'portfolio-hk-row' : ''} ${isExpanded ? 'holding-row-active' : ''}" data-code="${escapeHtml(x.code)}">
+      <tr class="holding-row ${isHK ? 'portfolio-hk-row' : ''} ${isExpanded ? 'holding-row-active' : ''}" data-code="${escapeHtml(x.code)}">
         <td>
           <div class="name-cell">
-            <strong>${escapeHtml(x.name)}${x.code.endsWith('.HK') ? '<span class="portfolio-market-badge">港股</span>' : ''}</strong>
+            <strong>${escapeHtml(x.name)}${isHK ? '<span class="portfolio-market-badge">港股</span>' : ''}</strong>
             <span class="code">${escapeHtml(x.code)}</span>
           </div>
         </td>
         <td><span class="tag">${escapeHtml(x.category)}</span></td>
         <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
-        <td>${state.hideValues ? '****' : (x.costPrice === '-' ? '-' : priceFormatter.format(toNum(x.costPrice)))}</td>
-        <td>${state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : priceFormatter.format(toNum(x.currentPrice)))}</td>
+        <td ${isHK ? 'title="人民币加权平均成本价"' : ''}>${costText}</td>
+        <td>${priceText}</td>
         <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatDayPercent(x.dayPnlRate)}</td>
         <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
         <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
@@ -374,10 +377,16 @@ async function loadHoldingDetail(code, name, cardEl) {
       ? (data.fx_rate || (holding && holding.quantity > 0 && currentPrice ? holding.marketValue / (holding.quantity * currentPrice) : 0.9148))
       : 1.0;
 
-    // 当前持仓基准提示
-    const basePill = base
-      ? `<span class="detail-opening-pill" title="当前持仓与成本">当前持仓: ${numberFormatter.format(base.quantity)} 股 | 加权成本 ${priceFormatter.format(toNum(base.cost))}</span>`
-      : '';
+    // 当前持仓基准提示（港股展示人民币成本及原币参考成本）
+    let basePill = '';
+    if (base) {
+      if (isHK) {
+        const hkdPart = base.cost_hkd ? ` (原币 HK$${priceFormatter.format(toNum(base.cost_hkd))})` : '';
+        basePill = `<span class="detail-opening-pill" title="当前持仓与成本">当前持仓: ${numberFormatter.format(base.quantity)} 股 | 人民币成本 ¥${priceFormatter.format(toNum(base.cost))}${hkdPart}</span>`;
+      } else {
+        basePill = `<span class="detail-opening-pill" title="当前持仓与成本">当前持仓: ${numberFormatter.format(base.quantity)} 股 | 加权成本 ${priceFormatter.format(toNum(base.cost))}</span>`;
+      }
+    }
 
     // 顶部实时收益测算 Banner
     const bannerHtml = `
@@ -416,15 +425,16 @@ async function loadHoldingDetail(code, name, cardEl) {
             <tbody>
               ${txList.map(tx => {
                 const isBuy = tx.type === 'buy';
+                const isDiv = tx.type === 'dividend';
                 const isInit = tx.note === '初始持仓';
 
-                // 计算实时涨跌幅与卖出收益
+                // 计算实时涨跌幅与卖出收益（分红记录不参与实时测算）
                 let pctChange = null;
                 let profitCny = null;
                 let diffTagHtml = '';
                 let calcSummary = '';
 
-                if (currentPrice && tx.price > 0) {
+                if (!isDiv && currentPrice && tx.price > 0 && tx.quantity > 0) {
                   pctChange = ((currentPrice - tx.price) / tx.price) * 100;
                   const currentValCny = tx.quantity * currentPrice * fxRate;
                   profitCny = currentValCny - (tx.amount_cny || 0);
@@ -453,6 +463,11 @@ async function loadHoldingDetail(code, name, cardEl) {
                   `;
                 }
 
+                const tagClass = isBuy ? 'buy' : (isDiv ? 'dividend' : 'sell');
+                const tagLabel = isBuy ? '买入' : (isDiv ? '分红' : '卖出');
+                const priceDisplay = isDiv ? (tx.price > 0 ? `${tx.price.toFixed(3)}${isHK ? ' HKD' : ' 元'}` : '—') : `${tx.price.toFixed(4)}${isHK ? ' HKD' : ' 元'}`;
+                const qtyDisplay = isDiv && tx.quantity === 0 ? '—' : numberFormatter.format(tx.quantity);
+
                 return `
                   <tr class="detail-tx-item-row"
                       data-tx-id="${tx.id}"
@@ -464,17 +479,17 @@ async function loadHoldingDetail(code, name, cardEl) {
                       data-pct="${pctChange !== null ? pctChange.toFixed(4) : ''}"
                       data-profit="${profitCny !== null ? profitCny.toFixed(2) : ''}"
                       data-calc-summary="${escapeHtml(calcSummary)}"
-                      title="${escapeHtml(calcSummary ? `【实时测算】${calcSummary}` : '')}">
+                      title="${escapeHtml(calcSummary ? `【实时测算】${calcSummary}` : (isDiv ? '现金分红冲减持仓成本' : ''))}">
                     <td>${escapeHtml(tx.trade_date)}</td>
-                    <td><span class="detail-tx-tag ${isBuy ? 'buy' : 'sell'}">${isBuy ? '买入' : '卖出'}</span></td>
+                    <td><span class="detail-tx-tag ${tagClass}">${tagLabel}</span></td>
                     <td>
                       <div class="tx-price-cell-wrap">
-                        <span>${tx.price.toFixed(4)}${isHK ? ' HKD' : ' 元'}</span>
+                        <span>${priceDisplay}</span>
                         ${diffTagHtml}
                       </div>
                     </td>
-                    <td>${numberFormatter.format(tx.quantity)}</td>
-                    <td>¥${tx.amount_cny.toFixed(2)}</td>
+                    <td>${qtyDisplay}</td>
+                    <td style="${isDiv ? 'color:var(--gold,#f59e0b);font-weight:600;' : ''}">${isDiv ? '-¥' : '¥'}${tx.amount_cny.toFixed(2)}</td>
                     ${isHK ? `<td class="detail-tx-fx" style="color:var(--muted)">${tx.fx_rate ? tx.fx_rate.toFixed(4) : '1.0000'}</td>` : ''}
                     <td style="color:var(--muted);max-width:240px;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(tx.note || '')}">${escapeHtml(tx.note || '—')}</td>
                     <td>${isInit ? '<span style="color:var(--muted);font-size:11px;">初始</span>' : `<button class="tx-undo-btn" data-id="${tx.id}" onclick="undoTx(this)">撤销</button>`}</td>
