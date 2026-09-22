@@ -6,8 +6,9 @@ import type { BaseHolding, OpeningHolding, Transaction, CountRow } from '../type
 const transactions = new Hono();
 
 /**
- * POST / — 新增一笔交易（买入/卖出）
- * body: { code, type:'buy'|'sell', trade_date, quantity, amount_cny, note? }
+ * POST / — 新增一笔交易（买入/卖出/现金分红）
+ * body: { code, type:'buy'|'sell'|'dividend', trade_date, quantity, amount_cny, price?, note? }
+ * 分红记录 quantity 可为 0（数量不变），price 可选；amount_cny > 0 表示分红金额，回放时冲减持仓成本。
  */
 transactions.post('/', async (c) => {
   let body: Record<string, unknown>;
