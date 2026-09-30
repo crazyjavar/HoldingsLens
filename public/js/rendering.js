@@ -17,7 +17,7 @@ export async function loadLatest(isSilent = false) {
     name:        row.name,
     code:        row.code,
     marketValue: row.market,
-    costPrice:   row.cost ?? '-',
+    costPrice:   row.code.endsWith('.HK') ? (row.cost_hkd ?? '-') : (row.cost ?? '-'),
     previousClose: row.prev_close ?? '-',
     currentPrice: row.price,
     quantity:    row.quantity,
@@ -213,8 +213,16 @@ function renderTable(isSilent = false) {
   for (const x of rows) {
     const isExpanded = state.expandedHoldingCode === x.code;
     const isHK = x.code.endsWith('.HK');
-    const costText = state.hideValues ? '****' : (x.costPrice === '-' ? '-' : (isHK ? `¥${priceFormatter.format(toNum(x.costPrice))}` : priceFormatter.format(toNum(x.costPrice))));
-    const priceText = state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : (isHK ? `${priceFormatter.format(toNum(x.currentPrice))}<span style="font-size:0.75em;opacity:0.75;margin-left:2px;">HKD</span>` : priceFormatter.format(toNum(x.currentPrice))));
+    const costText = state.hideValues ? '****' : (x.costPrice === '-' ? '-' : (isHK ? `HK$${toNum(x.costPrice).toFixed(3)}` : priceFormatter.format(toNum(x.costPrice))));
+    const priceText = state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : (isHK ? `HK$${toNum(x.currentPrice).toFixed(3)}` : priceFormatter.format(toNum(x.currentPrice))));
+
+    // 今日涨跌：百分比与当日盈亏具体金额（带正负符号，隐私模式下隐藏具体金额）
+    const dayPnlAmtText = state.hideValues
+      ? '****'
+      : (x.dayPnl > 0 ? `+${moneyFormatter.format(x.dayPnl)}` : moneyFormatter.format(x.dayPnl));
+    const dayRateSign = x.dayPnlRate > 0 ? '+' : '';
+    const dayRateText = `${dayRateSign}${formatDayPercent(x.dayPnlRate)}`;
+
     htmlParts.push(`
       <tr class="holding-row ${isHK ? 'portfolio-hk-row' : ''} ${isExpanded ? 'holding-row-active' : ''}" data-code="${escapeHtml(x.code)}">
         <td>
@@ -225,9 +233,14 @@ function renderTable(isSilent = false) {
         </td>
         <td><span class="tag">${escapeHtml(x.category)}</span></td>
         <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
-        <td ${isHK ? 'title="人民币加权平均成本价"' : ''}>${costText}</td>
+        <td ${isHK ? 'title="人民币成本按当日参考汇率折算为港币"' : ''}>${costText}</td>
         <td>${priceText}</td>
-        <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">${formatDayPercent(x.dayPnlRate)}</td>
+        <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">
+          <div class="day-pnl-cell">
+            <span class="day-pnl-rate">${dayRateText}</span>
+            <span class="day-pnl-amt">${dayPnlAmtText}</span>
+          </div>
+        </td>
         <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
         <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
         <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
@@ -338,7 +351,7 @@ function updateBannerActive(bannerEl, txData, currentPrice, isHK) {
         </span>
         <span class="calc-val-profit ${isProfit ? 'positive' : 'negative'}">
           ${isBuy ? (isProfit ? '卖出可获利' : '卖出亏损') : (isProfit ? '现价高于卖出' : '现价低于卖出')}
-          <strong>${isProfit ? '+' : '-'}¥${Math.abs(profitCny).toFixed(2)}</strong>
+          <strong>${isProfit ? '+' : '-'}${moneyFormatter.format(Math.abs(profitCny))}</strong>
         </span>
       </div>
     </div>
@@ -445,14 +458,15 @@ async function loadHoldingDetail(code, name, cardEl) {
                   const pctStr = `${upDownText} ${Math.abs(pctChange).toFixed(2)}%`;
 
                   let profitText = '';
+                  const absProfitFormatted = moneyFormatter.format(Math.abs(profitCny));
                   if (isBuy) {
                     profitText = profitCny >= 0
-                      ? `卖出可获利 +¥${profitCny.toFixed(2)}`
-                      : `卖出亏损 -¥${Math.abs(profitCny).toFixed(2)}`;
+                      ? `卖出可获利 +${absProfitFormatted}`
+                      : `卖出亏损 -${absProfitFormatted}`;
                   } else {
                     profitText = profitCny >= 0
-                      ? `现价高于卖出价 +¥${profitCny.toFixed(2)}`
-                      : `现价低于卖出价 -¥${Math.abs(profitCny).toFixed(2)}`;
+                      ? `现价高于卖出价 +${absProfitFormatted}`
+                      : `现价低于卖出价 -${absProfitFormatted}`;
                   }
                   calcSummary = `${pctStr} · ${profitText}`;
 
@@ -489,7 +503,7 @@ async function loadHoldingDetail(code, name, cardEl) {
                       </div>
                     </td>
                     <td>${qtyDisplay}</td>
-                    <td style="${isDiv ? 'color:var(--gold,#f59e0b);font-weight:600;' : ''}">${isDiv ? '-¥' : '¥'}${tx.amount_cny.toFixed(2)}</td>
+                    <td title="¥${tx.amount_cny.toFixed(2)}" style="${isDiv ? 'color:var(--gold,#f59e0b);font-weight:600;' : ''}">${isDiv ? `-${moneyFormatter.format(tx.amount_cny)}` : moneyFormatter.format(tx.amount_cny)}</td>
                     ${isHK ? `<td class="detail-tx-fx" style="color:var(--muted)">${tx.fx_rate ? tx.fx_rate.toFixed(4) : '1.0000'}</td>` : ''}
                     <td style="color:var(--muted);max-width:240px;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(tx.note || '')}">${escapeHtml(tx.note || '—')}</td>
                     <td>${isInit ? '<span style="color:var(--muted);font-size:11px;">初始</span>' : `<button class="tx-undo-btn" data-id="${tx.id}" onclick="undoTx(this)">撤销</button>`}</td>
@@ -547,7 +561,7 @@ async function loadHoldingDetail(code, name, cardEl) {
           <span style="color:${isUp ? 'var(--red)' : 'var(--green)'};">${isUp ? '▲ 上涨' : '▼ 下跌'} ${Math.abs(pctChange).toFixed(2)}%</span>
           <span style="color:${isProfit ? 'var(--red)' : 'var(--green)'};">
             ${isBuy ? (isProfit ? '卖出获利' : '卖出亏损') : (isProfit ? '现价高于卖出' : '现价低于卖出')}
-            ${isProfit ? '+' : '-'}¥${Math.abs(profitCny).toFixed(2)}
+            ${isProfit ? '+' : '-'}${moneyFormatter.format(Math.abs(profitCny))}
           </span>
         </div>
       `;

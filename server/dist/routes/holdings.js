@@ -9,7 +9,15 @@ holdings.get('/latest', (c) => {
         return c.json({ holdings: [], summary: null, date: null });
     }
     const date = latestDate.date;
-    const holdingsData = db.prepare('SELECT * FROM holdings WHERE date = ? ORDER BY market DESC').all(date);
+    const fxRate = getFxRate();
+    const holdingsData = db.prepare('SELECT * FROM holdings WHERE date = ? ORDER BY market DESC').all(date).map(row => ({
+        ...row,
+        // 港股快照中的 cost 是人民币每股成本；换算成当前汇率下的港币等值，
+        // 与以港币报价的现价放在同一货币单位中展示。
+        cost_hkd: row.code.endsWith('.HK') && row.cost != null && fxRate > 0
+            ? row.cost / fxRate
+            : null,
+    }));
     const summary = db.prepare('SELECT * FROM daily_summary WHERE date = ?').get(date);
     // ── 计算当月盈亏（本月每日盈亏之和） ────────────────────────
     const monthPrefix = date.slice(0, 7) + '-%';

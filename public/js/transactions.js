@@ -1,6 +1,6 @@
 // ── 持仓管理与交易记录 ──────────────────────────────────────
 import { state } from './state.js';
-import { toNum, formatDayPercent, escapeHtml } from './utils.js';
+import { toNum, formatDayPercent, moneyFormatter, escapeHtml } from './utils.js';
 import { loadLatest } from './rendering.js';
 
 let mgmtHoldingsList = [];  // 所有持仓加载后存入，供汇率提示用
@@ -68,7 +68,7 @@ function renderTxList(list) {
       <td class="${cls}">${label}</td>
       <td>${tx.quantity}</td>
       <td>${priceStr}</td>
-      <td>¥${tx.amount_cny.toFixed(2)}</td>
+      <td title="¥${tx.amount_cny.toFixed(2)}">${moneyFormatter.format(tx.amount_cny)}</td>
       <td style="color:var(--muted)">${escapeHtml(tx.note || '—')}</td>
       <td>${isInit ? '<span style="color:var(--muted);font-size:11px;">初始</span>' : `<button class="tx-undo-btn" data-id="${tx.id}" onclick="undoTx(this)">撤销</button>`}</td>
     </tr>`;

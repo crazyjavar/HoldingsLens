@@ -1232,6 +1232,25 @@
     .name-cell strong { color: var(--ink); }
     .code { color: var(--muted); font-size: 12px; }
 
+    /* 今日涨跌：百分比 + 具体金额两行布局 */
+    .day-pnl-cell {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      vertical-align: middle;
+    }
+    .day-pnl-rate {
+      font-weight: 600;
+      line-height: 1.25;
+    }
+    .day-pnl-amt {
+      font-size: 11px;
+      line-height: 1.25;
+      opacity: 0.82;
+      font-variant-numeric: tabular-nums;
+    }
+
     .portfolio-hk-row td { background: rgba(251,191,36,0.045); }
     .portfolio-market-badge {
       display: inline-flex;

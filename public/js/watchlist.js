@@ -20,7 +20,20 @@ function pctBadgeValueOnly(totalPct) {
 let wlList = [];
 
 // ── 股票 / 基金 页签过滤 ─────────────────────────────────────
-const isFundCode = code => String(code || '').toUpperCase().endsWith('.OF');
+export const isFundItem = item => {
+  if (!item) return false;
+  const code = String(item.code || item || '').toUpperCase();
+  const name = String(item.name || '');
+  if (code.endsWith('.OF')) return true;
+  // 场内基金代码规则：沪市 50/51/56/58 开头，深市 15/16 开头
+  if (/\.(SH|SZ)$/.test(code)) {
+    const num = code.slice(0, 6);
+    if (/^(50|51|56|58|15|16)\d{4}$/.test(num)) return true;
+  }
+  if (/(ETF|LOF|基金)/i.test(name)) return true;
+  return false;
+};
+
 let wlTab = (() => {
   try { return localStorage.getItem('wlTab') === 'fund' ? 'fund' : 'stock'; } catch (_) { return 'stock'; }
 })();
@@ -32,8 +45,8 @@ function syncTabUI() {
 }
 
 function updateTabCounts(list) {
-  const stock = list.filter(it => !isFundCode(it.code)).length;
-  const fund  = list.length - stock;
+  const fund = list.filter(it => isFundItem(it)).length;
+  const stock = list.length - fund;
   const sEl = document.getElementById('wlCountStock');
   const fEl = document.getElementById('wlCountFund');
   if (sEl) sEl.textContent = stock;
@@ -41,13 +54,23 @@ function updateTabCounts(list) {
 }
 
 // 当前页签下可见的自选项
-const visibleWlItems = list => list.filter(it => (wlTab === 'fund') === isFundCode(it.code));
+const visibleWlItems = list => list.filter(it => (wlTab === 'fund') === isFundItem(it));
 
-function marketBadge(code) {
+function marketBadge(code, name = '') {
   if (code.endsWith('.HK')) return '<span class="wl-market-badge hk">港</span>';
-  if (code.endsWith('.SH')) return '<span class="wl-market-badge sh">沪</span>';
-  if (code.endsWith('.SZ')) return '<span class="wl-market-badge sz">深</span>';
   if (code.endsWith('.OF')) return '<span class="wl-market-badge of">基</span>';
+  if (code.endsWith('.SH')) {
+    if (/^(50|51|56|58)\d{4}/.test(code) || /(ETF|LOF|基金)/i.test(name)) {
+      return '<span class="wl-market-badge of">基</span>';
+    }
+    return '<span class="wl-market-badge sh">沪</span>';
+  }
+  if (code.endsWith('.SZ')) {
+    if (/^(15|16)\d{4}/.test(code) || /(ETF|LOF|基金)/i.test(name)) {
+      return '<span class="wl-market-badge of">基</span>';
+    }
+    return '<span class="wl-market-badge sz">深</span>';
+  }
   return '';
 }
 
@@ -69,7 +92,7 @@ function renderWatchlist(list, isSilent = false) {
   empty.hidden = true;
   container.innerHTML = visible.map(item => {
     const isHK     = item.code.endsWith('.HK');
-    const isFund   = item.code.endsWith('.OF');
+    const isFund   = isFundItem(item);
     const priceStr = item.current_price != null ? item.current_price.toFixed(isFund ? 4 : 3) : '—';
     const dayClass = item.day_pct ? (parseFloat(item.day_pct) >= 0 ? 'positive' : 'negative') : '';
     const dayStr   = item.day_pct || '—';
@@ -83,7 +106,7 @@ function renderWatchlist(list, isSilent = false) {
           <div class="wl-name-box">
             <div class="wl-title-row">
               <strong class="wl-name">${escapeHtml(item.name)}</strong>
-              ${marketBadge(item.code)}
+              ${marketBadge(item.code, item.name)}
             </div>
             <span class="wl-code-sub">${escapeHtml(item.code)} ${item.note ? '• ' + escapeHtml(item.note) : ''}</span>
           </div>
@@ -268,7 +291,7 @@ document.getElementById('wlAddBtn').addEventListener('click', async () => {
     document.getElementById('wlName').value = '';
     document.getElementById('wlNote').value = '';
     // 新标的若不属于当前页签（如在“股票”页签下加了基金），自动切过去让用户看得见
-    const targetTab = isFundCode(code) ? 'fund' : 'stock';
+    const targetTab = isFundItem({ code, name: finalName }) ? 'fund' : 'stock';
     if (targetTab !== wlTab) {
       wlTab = targetTab;
       try { localStorage.setItem('wlTab', wlTab); } catch (_) {}

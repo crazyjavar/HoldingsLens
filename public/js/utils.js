@@ -2,7 +2,43 @@
 import { state } from './state.js';
 
 export const numberFormatter = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 });
-export const moneyFormatter  = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 });
+const rawMoneyFormatter = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * 格式化金额：
+ * 当绝对值大于等于 100,000 时，以“万”为单位显示并保留 2 位小数，如 149300 => "¥14.93 万"
+ * 否则按标准货币格式展示，如 9898.6 => "¥9,898.60"
+ */
+export function formatMoney(value, options = {}) {
+  const num = typeof value === 'string' ? toNum(value) : Number(value);
+  if (isNaN(num)) return options.noSymbol ? '0.00' : '¥0.00';
+  const abs = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
+
+  if (abs >= 100000) {
+    const wan = (abs / 10000).toLocaleString('zh-CN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const prefix = options.noSymbol ? sign : (num < 0 ? '-¥' : '¥');
+    return `${prefix}${wan} 万`;
+  }
+
+  if (options.noSymbol) {
+    return `${sign}${abs.toLocaleString('zh-CN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  return rawMoneyFormatter.format(num);
+}
+
+export const moneyFormatter = {
+  format: (value, options) => formatMoney(value, options),
+  resolvedOptions: () => rawMoneyFormatter.resolvedOptions(),
+};
+
 export const priceFormatter  = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
 export function formatPercent(value) {
@@ -72,13 +108,22 @@ export function monthEndKey(monthKey) {
 
 export function historyValueDisplay(value, isAmt) {
   if (isAmt && state.hideValues) return '¥****';
-  return isAmt
-    ? `${value >= 0 ? '+' : ''}${Math.round(value).toLocaleString('zh-CN')}`
-    : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+  if (!isAmt) return `${value >= 0 ? '+' : ''}${Number(value).toFixed(2)}%`;
+  const num = typeof value === 'string' ? toNum(value) : Number(value);
+  const abs = Math.abs(num);
+  const sign = num >= 0 ? '+' : '-';
+  if (abs >= 100000) {
+    const wan = (abs / 10000).toLocaleString('zh-CN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return `${sign}${wan} 万`;
+  }
+  return `${sign}${Math.round(abs).toLocaleString('zh-CN')}`;
 }
 
 export function historyValueTitle(label, value, isAmt, prefix = '盈亏') {
   if (isAmt && state.hideValues) return `${label} ${prefix} ¥****`;
   const display = historyValueDisplay(value, isAmt);
-  return `${label} ${isAmt ? `${prefix} ${display} 元` : `收益率 ${display}`}`;
+  return `${label} ${isAmt ? `${prefix} ${display}元` : `收益率 ${display}`}`;
 }
