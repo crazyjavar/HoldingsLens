@@ -233,13 +233,13 @@ export function beijingDate(date = new Date()) {
     return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.date).padStart(2, '0')}`;
 }
 /**
- * 判断当前是否在交易时段（工作日 9:25-15:05）
+ * 判断当前是否在交易时段（工作日 9:25 - 16:10，同时覆盖 A 股与港股交易时段）
  */
 export function isTradingHours() {
     const p = beijingParts();
     if (p.day === 0 || p.day === 6)
         return false;
     const total = p.hours * 60 + p.minutes;
-    return total >= 9 * 60 + 25 && total <= 15 * 60 + 5;
+    return total >= 9 * 60 + 25 && total <= 16 * 60 + 10;
 }
 //# sourceMappingURL=db.js.map

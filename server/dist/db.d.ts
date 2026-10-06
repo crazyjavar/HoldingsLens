@@ -40,6 +40,6 @@ export declare function beijingParts(date?: Date): {
 /** 北京时间日期字符串 YYYY-MM-DD */
 export declare function beijingDate(date?: Date): string;
 /**
- * 判断当前是否在交易时段（工作日 9:25-15:05）
+ * 判断当前是否在交易时段（工作日 9:25 - 16:10，同时覆盖 A 股与港股交易时段）
  */
 export declare function isTradingHours(): boolean;

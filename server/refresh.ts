@@ -28,40 +28,84 @@ export async function refreshHoldings(options: { force?: boolean } = {}): Promis
   console.log(`[refresh] 开始抓取行情 ${startedAt}${force ? ' (手动/强制执行)' : ''}`);
 
   try {
-    // 从 DB 读取持仓（取代硬编码 SEED_HOLDINGS）。
-    // 只读取当前仍有持仓数量的标的，清仓（quantity=0）的标的不再进入组合展示与快照。
+    // 从 DB 读取当前仍有持仓数量的标的（quantity > 0）
     const baseHoldings = db.prepare<BaseHolding>('SELECT * FROM base_holdings WHERE quantity > 0').all();
     const today = beijingDate(); // YYYY-MM-DD
 
-    // 持仓与自选一次抓取同一份行情（取并集）：同一标的的现价/昨收/涨跌幅必须来自同一时刻。
-    // 此前“先抓持仓行情、再单独抓一次自选行情”会在两次请求之间产生价格跳动，
-    // 导致同一只股票（如美团）在持仓明细与自选里显示不同的今日涨跌，且每次刷新都无法对齐。
-    const wlSymbols = db.prepare<{ code: string }>('SELECT code FROM watchlist').all()
-      .map(r => sinaSymbol(r.code));
-    const symbols = [...new Set([
-      ...baseHoldings.map(h => toSymbol(h.code)),
-      ...wlSymbols,
+    // 区分港股与 A 股标的
+    const hkHoldings = baseHoldings.filter(h => h.code.endsWith('.HK'));
+    const cnHoldings = baseHoldings.filter(h => !h.code.endsWith('.HK'));
+
+    // 自选股按市场分组
+    const wlRows = db.prepare<{ code: string }>('SELECT code FROM watchlist').all();
+    const hkWlSymbols = wlRows.filter(r => r.code.endsWith('.HK')).map(r => sinaSymbol(r.code));
+    const cnWlSymbols = wlRows.filter(r => !r.code.endsWith('.HK')).map(r => sinaSymbol(r.code));
+
+    // 港股所有标的（持仓 + 自选）
+    const hkSymbols = [...new Set([
+      ...hkHoldings.map(h => toSymbol(h.code)),
+      ...hkWlSymbols,
     ])];
-    const [quotes] = await Promise.all([
-      fetchPrices(symbols),
+
+    // A 股探针标的（优先使用持仓中的 A 股，另外加上证指数 sh000001 作为权威参考）
+    const cnProbeSymbols = [
+      'sh000001',
+      ...(cnHoldings.length > 0 ? [toSymbol(cnHoldings[0].code)] : []),
+    ];
+
+    // 第一步：并发拉取汇率、港股全量行情以及 A 股探针行情
+    // 港股 + A 股探针走腾讯接口，耗时极短（<100ms），不涉及休市基金，极其稳定
+    const probeSymbols = [...new Set([...hkSymbols, ...cnProbeSymbols])];
+    const [probeQuotes] = await Promise.all([
+      fetchPrices(probeSymbols),
       refreshFxRate(),
     ]);
 
-    // 开盘前或 A/H 股同时休市时，行情源只会返回上一交易日。
-    // 当所有可判定的行情日期都不是今天且非强制刷新时，不写入今日快照。
-    // 注意：公募基金（of...）在日间恒为上一交易日（T-1）结算净值，判定开市时仅以股票/ETF标的日期为准。
-    const stockTradeDates = Object.entries(quotes)
-      .filter(([sym]) => !sym.startsWith('of'))
-      .map(([, q]) => q.lastTradeDate)
-      .filter((d): d is string => d !== null);
-    const quoteDates = stockTradeDates.length > 0
-      ? stockTradeDates
-      : Object.values(quotes).map(q => q.lastTradeDate).filter((d): d is string => d !== null);
+    // 判定港股与 A 股开市状态
+    // 港股开市：港股标的中有任意一个的 lastTradeDate === today
+    const isHkOpen = hkSymbols.some(s => probeQuotes[s]?.lastTradeDate === today);
+    // A 股开市：A 股探针标的中任意一个的 lastTradeDate === today
+    const isCnOpen = cnProbeSymbols.some(s => probeQuotes[s]?.lastTradeDate === today);
 
-    if (!force && quoteDates.length > 0 && !quoteDates.includes(today)) {
-      const uniqueDates = [...new Set(quoteDates)];
-      console.log(`[refresh] 当前无已开盘市场（行情日期: ${uniqueDates.join(', ')}），跳过写入`);
-      return { skipped: true, reason: 'no_market_open', quoteDates: uniqueDates };
+    console.log(`[refresh] 市场开市状态探测: 港股开市=${isHkOpen}, A股开市=${isCnOpen} (今日: ${today})`);
+
+    // 若两市均未开盘（如早盘 09:15 盘前，或元旦/春节两市同休）
+    if (!force && !isHkOpen && !isCnOpen) {
+      console.log(`[refresh] 当前港股与 A 股均未开盘（今日 ${today}），跳过写入`);
+      return { skipped: true, reason: 'no_market_open' };
+    }
+
+    let quotes: Record<string, QuoteResult> = { ...probeQuotes };
+
+    // 确定当前更新模式：
+    // 'HK_ONLY': 大 A 关门，港股开盘 -> 仅更新港股
+    // 'CN_ONLY': 大 A 开盘，港股关门 -> 仅更新 A 股
+    // 'ALL': 两市均开盘，或强制刷新
+    let updateMode: 'HK_ONLY' | 'CN_ONLY' | 'ALL' = 'ALL';
+
+    if (!isCnOpen && isHkOpen) {
+      updateMode = 'HK_ONLY';
+      console.log('[refresh] 命中状态：大 A 闭市，港股开市。仅更新港股的个股与自选，跳过 A 股及基金拉取。');
+    } else if (isCnOpen && !isHkOpen) {
+      updateMode = 'CN_ONLY';
+      console.log('[refresh] 命中状态：大 A 开市，港股休市。仅更新 A 股标的。');
+    }
+
+    // 若需要更新 A 股（非 HK_ONLY 模式），且 A 股持仓/自选有未拉取的标的，补全拉取 A 股行情
+    if (updateMode !== 'HK_ONLY') {
+      const cnSymbols = [...new Set([
+        ...cnHoldings.map(h => toSymbol(h.code)),
+        ...cnWlSymbols,
+      ])];
+      const remainingCn = cnSymbols.filter(s => !quotes[s]);
+      if (remainingCn.length > 0) {
+        try {
+          const cnQuotes = await fetchPrices(remainingCn);
+          Object.assign(quotes, cnQuotes);
+        } catch (e: unknown) {
+          console.warn('[refresh] A 股/基金行情补拉出现异常:', (e as Error).message);
+        }
+      }
     }
 
     let totalMarket = 0;
@@ -73,80 +117,76 @@ export async function refreshHoldings(options: { force?: boolean } = {}): Promis
     const rows: HoldingSnapshotRow[] = [];
 
     for (const holding of baseHoldings) {
-      const sym = toSymbol(holding.code);
-      const quote = quotes[sym];
-      if (!quote) continue;
-
-      const { current, previousClose, lastTradeDate } = quote;
-      const code     = holding.code;
-      const name     = holding.name;
-      const cost     = holding.cost;
+      const code = holding.code;
+      const name = holding.name;
+      const cost = holding.cost;
       const quantity = holding.quantity;
+      const isHK = code.endsWith('.HK');
+      const sym = toSymbol(code);
+      const quote = quotes[sym];
 
-      // 查询今天以前的最新历史记录，用作昨收价锚定
+      // 查询今天以前的最新历史记录，用作休市锚定与昨收价基准
       const latestRow = db.prepare<{ market: number; price: number; quantity: number }>(
         'SELECT market, price, quantity FROM holdings WHERE code = ? AND date < ? ORDER BY date DESC LIMIT 1'
       ).get(code, today);
 
-      // 港股使用已获取并持久化的真实参考汇率
-      const isHK = code.endsWith('.HK');
       const fx = isHK ? getFxRate() : 1.0;
 
-      // 重要判定：该标的今天是否交易（只有当行情拉取的最后交易日期明确且不等于今天，才判定为休市）
-      const isClosedToday = !!(lastTradeDate && lastTradeDate !== today);
-
-      // 确定今天计算所用的“昨收价”
-      // 1. 如果今天休市，为了将其当日盈亏归零，优先使用数据库历史最新收盘价（latestRow.price），无历史记录时回退使用行情接口昨收
-      // 2. 如果今天正常交易，为了采用最权威的数据并具备自愈校正能力，直接使用行情源返回的官方昨收价 previousClose！
-      const prevCloseToUse = isClosedToday
-        ? ((latestRow && latestRow.price > 0) ? latestRow.price : previousClose)
-        : previousClose;
+      // 判定该标的今天是否参与实时行情更新：
+      // - 港股：在 HK_ONLY 或 ALL 模式下，且港股今日开盘且有行情
+      // - A 股：在 CN_ONLY 或 ALL 模式下，且 A 股今日开盘且有行情
+      const shouldUpdate = isHK
+        ? (updateMode === 'HK_ONLY' || isHkOpen || force) && !!quote
+        : (updateMode !== 'HK_ONLY' && (isCnOpen || force)) && !!quote;
 
       let market: number, prevMkt: number, dayPnl: number, dayRate: string;
+      let effectivePrice: number, prevCloseToUse: number;
 
-      if (isClosedToday) {
-        // 如果今天休市，现价强制等于昨收价，使单只标的的日盈亏与涨跌幅归零
-        const priceToUse = prevCloseToUse;
-        market   = Math.round(priceToUse * quantity * fx * 100) / 100;
-        prevMkt  = Math.round(prevCloseToUse * quantity * fx * 100) / 100;
-        dayPnl   = 0.0;
-        dayRate  = '0.00%';
-        console.log(`[refresh] 标的 ${name} (${code}) 今天休市 (最后交易日 ${lastTradeDate})，当日盈亏归零`);
+      if (!shouldUpdate) {
+        // 休市或跳过更新的标的：平盘处理，当日盈亏归零，现价与市值沿用上一交易日收盘
+        const fallbackPrice = (latestRow && latestRow.price > 0)
+          ? latestRow.price
+          : (quote?.previousClose || quote?.current || cost);
+        effectivePrice = fallbackPrice;
+        prevCloseToUse = fallbackPrice;
+
+        market = (latestRow && latestRow.market > 0)
+          ? latestRow.market
+          : Math.round(fallbackPrice * quantity * fx * 100) / 100;
+        prevMkt = market;
+        dayPnl = 0.0;
+        dayRate = '0.00%';
+        console.log(`[refresh] 标的 ${name} (${code}) 休市，保持上一交易日收盘市值 ${market}，当日盈亏归零`);
       } else {
-        market   = Math.round(current * quantity * fx * 100) / 100;
-        prevMkt  = prevCloseToUse > 0 ? Math.round(prevCloseToUse * quantity * fx * 100) / 100 : 0;
-        dayPnl   = Math.round((market - prevMkt) * 100) / 100;
-        dayRate  = prevCloseToUse > 0
+        // 正常更新标的
+        const { current, previousClose } = quote!;
+        effectivePrice = current;
+        prevCloseToUse = previousClose > 0 ? previousClose : (latestRow?.price || current);
+
+        market = Math.round(current * quantity * fx * 100) / 100;
+        prevMkt = prevCloseToUse > 0 ? Math.round(prevCloseToUse * quantity * fx * 100) / 100 : market;
+        dayPnl = Math.round((market - prevMkt) * 100) / 100;
+        dayRate = prevCloseToUse > 0
           ? `${(Math.trunc(((current - prevCloseToUse) / prevCloseToUse * 100) * 1000) / 1000).toFixed(3)}%`
           : '0.000%';
       }
 
-      // 注意：base_holdings 中的 cost 统一为每股人民币成本（RMB/股）
-      // 港股已在交易流水回放时按买入汇率与发生金额进行了人民币加权均摊，
-      // 因此成本金额直接为 cost * quantity，切勿再乘以当期汇率 fx（否则会抹杀历史汇率变动）。
-      const costVal  = Math.round(cost * quantity * 100) / 100;
-      const pnl      = Math.round((market - costVal) * 100) / 100;
-      // 休市标的现价统一取 prevCloseToUse，与 market 保持同一口径，避免金额与比例不一致。
-      const effectivePrice = isClosedToday ? prevCloseToUse : current;
-      // 累计收益率统一使用累计盈亏金额除以总成本金额，真实涵盖股价与汇率变动
-      const pnlRate  = costVal > 0
-        ? `${(pnl / costVal * 100).toFixed(2)}%`
-        : '0.00%';
+      // base_holdings 中的 cost 为每股人民币成本（RMB/股），因此成本直接为 cost * quantity
+      const costVal = Math.round(cost * quantity * 100) / 100;
+      const pnl = Math.round((market - costVal) * 100) / 100;
+      const pnlRate = costVal > 0 ? `${(pnl / costVal * 100).toFixed(2)}%` : '0.00%';
 
-      totalMarket    += market;
+      totalMarket += market;
       totalCostValue += costVal;
-      
-      // 只有当标的今天没有休市，才将其盈亏和市值累加进“今日盈亏”与“当日收益率除数”
-      if (!isClosedToday) {
-        totalDayPnl    += dayPnl;
-        if (prevMkt > 0) totalPrevMarket += prevMkt;
-      }
-      
-      totalPnl       += pnl;
+      totalDayPnl += dayPnl;
+      totalPrevMarket += prevMkt; // 休市标的与开市标的的基准市值均计入组合总昨收市值
+      totalPnl += pnl;
 
-      rows.push({ date: today, code, name, market, cost, prev_close: prevCloseToUse,
+      rows.push({
+        date: today, code, name, market, cost, prev_close: prevCloseToUse,
         price: effectivePrice, quantity, day_pnl: dayPnl, day_pnl_pct: dayRate,
-        total_pnl: pnl, total_pnl_pct: pnlRate, weight: null, change_pct: '-' });
+        total_pnl: pnl, total_pnl_pct: pnlRate, weight: null, change_pct: '-'
+      });
     }
 
     // 计算仓位占比
@@ -156,7 +196,7 @@ export async function refreshHoldings(options: { force?: boolean } = {}): Promis
         : '0.00%';
     }
 
-    // 写入 holdings 表（UPSERT），使用手动事务
+    // 写入 holdings 表（UPSERT）
     const upsert = db.prepare(`
       INSERT INTO holdings
         (date, code, name, market, cost, prev_close, price, quantity,
@@ -174,7 +214,6 @@ export async function refreshHoldings(options: { force?: boolean } = {}): Promis
 
     db.exec('BEGIN');
     try {
-      // 清理当天残留的 0 仓位快照，避免清仓标的一直出现在最新持仓里。
       db.prepare('DELETE FROM holdings WHERE date = ? AND quantity = 0').run(today);
       for (const row of rows) upsert.run(row);
       db.exec('COMMIT');
@@ -205,10 +244,11 @@ export async function refreshHoldings(options: { force?: boolean } = {}): Promis
       totalDayRate, Math.round(totalPnl * 100) / 100, totalPnlRate, new Date().toISOString());
 
     lastRefreshTime = new Date().toISOString();
-    console.log(`[refresh] 完成，${rows.length} 条持仓写入 SQLite`);
+    console.log(`[refresh] 完成，${rows.length} 条持仓写入 SQLite (模式: ${updateMode})`);
 
-    // ── 顺带写入自选股行情快照（复用同一份 quotes）──────────────
-    await refreshWatchlistPrices(today, quotes).catch((e: unknown) =>
+    // 自选股快照写入：大 A 闭市时只更新港股自选
+    const onlyHkWatchlist = (updateMode === 'HK_ONLY');
+    await refreshWatchlistPrices(today, quotes, onlyHkWatchlist).catch((e: unknown) =>
       console.warn('[watchlist] 快照写入失败:', (e as Error).message)
     );
 
@@ -226,10 +266,14 @@ export async function refreshHoldings(options: { force?: boolean } = {}): Promis
  * 行情复用 refreshHoldings 主流程已抓取的 quotes（同一时刻同一份数据），不再二次联网抓取。
  * @param {string} today - YYYY-MM-DD
  * @param {Record<string, QuoteResult>} quotes - 主流程已抓取的行情
+ * @param {boolean} onlyHK - 是否仅写入港股自选（当大 A 休市时）
  */
-async function refreshWatchlistPrices(today: string, quotes: Record<string, QuoteResult>) {
+async function refreshWatchlistPrices(today: string, quotes: Record<string, QuoteResult>, onlyHK: boolean = false) {
   const items = db.prepare<WatchlistItem>('SELECT code, added_price FROM watchlist').all();
   if (items.length === 0) return;
+
+  const targetItems = onlyHK ? items.filter(it => it.code.endsWith('.HK')) : items;
+  if (targetItems.length === 0) return;
 
   const upsert = db.prepare(`
     INSERT INTO watchlist_price (code, date, price, prev_close, pct_vs_added)
@@ -242,7 +286,7 @@ async function refreshWatchlistPrices(today: string, quotes: Record<string, Quot
 
   db.exec('BEGIN');
   try {
-    for (const item of items) {
+    for (const item of targetItems) {
       const sym = sinaSymbol(item.code);
       const q = quotes[sym];
       if (!q) continue;
