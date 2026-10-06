@@ -123,13 +123,11 @@ export async function refreshHoldings(options = {}) {
                     : (quote?.previousClose || quote?.current || cost);
                 effectivePrice = fallbackPrice;
                 prevCloseToUse = fallbackPrice;
-                market = (latestRow && latestRow.market > 0)
-                    ? latestRow.market
-                    : Math.round(fallbackPrice * quantity * fx * 100) / 100;
+                market = Math.round(fallbackPrice * quantity * fx * 100) / 100;
                 prevMkt = market;
                 dayPnl = 0.0;
                 dayRate = '0.00%';
-                console.log(`[refresh] 标的 ${name} (${code}) 休市，保持上一交易日收盘市值 ${market}，当日盈亏归零`);
+                console.log(`[refresh] 标的 ${name} (${code}) 休市，保持上一交易日收盘价 ${fallbackPrice}，计算市值 ${market}，当日盈亏归零`);
             }
             else {
                 // 正常更新标的
