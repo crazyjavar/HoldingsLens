@@ -202,63 +202,76 @@ function currentRows() {
   return filtered.sort(sorters[state.sort]);
 }
 
+function formatAppMarket(val) {
+  if (val >= 100000) {
+    return `${(val / 10000).toFixed(2)}万`;
+  }
+  return val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatAppPnl(val) {
+  return val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function renderTable(isSilent = false) {
   const rows  = currentRows();
   const tbody = document.getElementById('holdingTable');
   const empty = document.getElementById('emptyState');
   empty.hidden = rows.length > 0;
 
-  // 构建表格 HTML：包含主行和可能展开的详情子行
+  // 构建表格 HTML：包含主行和可能展开的详情子行（华宝证券 4 列双行经典排版）
   const htmlParts = [];
   for (const x of rows) {
     const isExpanded = state.expandedHoldingCode === x.code;
     const isHK = x.code.endsWith('.HK');
-    const costText = state.hideValues ? '****' : (x.costPrice === '-' ? '-' : (isHK ? `HK$${toNum(x.costPrice).toFixed(3)}` : priceFormatter.format(toNum(x.costPrice))));
-    const priceText = state.hideValues ? '****' : (x.currentPrice === '-' ? '-' : (isHK ? `HK$${toNum(x.currentPrice).toFixed(3)}` : priceFormatter.format(toNum(x.currentPrice))));
 
-    // 今日涨跌：百分比与当日盈亏具体金额（带正负符号，隐私模式下隐藏具体金额）
-    const dayPnlAmtText = state.hideValues
-      ? '****'
-      : (x.dayPnl > 0 ? `+${moneyFormatter.format(x.dayPnl)}` : moneyFormatter.format(x.dayPnl));
-    const dayRateSign = x.dayPnlRate > 0 ? '+' : '';
-    const dayRateText = `${dayRateSign}${formatDayPercent(x.dayPnlRate)}`;
+    // 格式化各列数值
+    const marketText = state.hideValues ? '****' : formatAppMarket(x.marketValue);
+    const pnlAmtText = state.hideValues ? '****' : formatAppPnl(x.pnl);
+    const pnlRateText = state.hideValues ? '****' : `${Number(x.pnlRate).toFixed(3)}%`;
+    const qtyText = state.hideValues ? '****' : String(Math.round(x.quantity));
+    const costText = state.hideValues ? '****' : (
+      x.costPrice === '-' ? '-' : (isHK ? `HK$${toNum(x.costPrice).toFixed(3)}` : toNum(x.costPrice).toFixed(3))
+    );
+    const priceText = state.hideValues ? '****' : (
+      x.currentPrice === '-' ? '-' : (isHK ? `HK$${toNum(x.currentPrice).toFixed(3)}` : toNum(x.currentPrice).toFixed(3))
+    );
+
+    // 整行颜色类：盈利整行红、亏损整行蓝
+    const isProfit = x.pnl > 0;
+    const isLoss = x.pnl < 0;
+    const rowColorClass = isProfit ? 'row-gain' : (isLoss ? 'row-loss' : 'row-flat');
 
     htmlParts.push(`
-      <tr class="holding-row ${isHK ? 'portfolio-hk-row' : ''} ${isExpanded ? 'holding-row-active' : ''}" data-code="${escapeHtml(x.code)}">
-        <td>
-          <div class="name-cell">
-            <strong>${escapeHtml(x.name)}${isHK ? '<span class="portfolio-market-badge">港股</span>' : ''}</strong>
-            <span class="code">${escapeHtml(x.code)}</span>
+      <tr class="holding-row ${rowColorClass} ${isExpanded ? 'holding-row-active' : ''}" data-code="${escapeHtml(x.code)}">
+        <td class="col-stock-market">
+          <div class="cell-top stock-name-row">
+            ${isHK ? '<span class="badge-hk-tag">沪港</span>' : ''}
+            <span class="stock-name">${escapeHtml(x.name)}</span>
           </div>
+          <div class="cell-bottom stock-market-val">${marketText}</div>
         </td>
-        <td><span class="tag">${escapeHtml(x.category)}</span></td>
-        <td>${state.hideValues ? '****' : moneyFormatter.format(x.marketValue)}</td>
-        <td ${isHK ? 'title="人民币成本按当日参考汇率折算为港币"' : ''}>${costText}</td>
-        <td>${priceText}</td>
-        <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">
-          <div class="day-pnl-cell">
-            <span class="day-pnl-amt">${dayPnlAmtText}</span>
-            <span class="day-pnl-rate">${dayRateText}</span>
-          </div>
+        <td class="col-pnl-cell">
+          <div class="cell-top pnl-amt">${pnlAmtText}</div>
+          <div class="cell-bottom pnl-rate">${pnlRateText}</div>
         </td>
-        <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>
-        <td class="${x.pnl >= 0 ? 'positive' : 'negative'}">${state.hideValues ? '****' : moneyFormatter.format(x.pnl)}</td>
-        <td><span class="tag ${x.pnl >= 0 ? 'gain' : 'loss'}">${formatPercent(x.pnlRate)}</span></td>
-        <td>${formatPercent(x.weight)}</td>
-        <td>
-          <button class="tx-badge-btn ${isExpanded ? 'expanded' : ''}" type="button" data-code="${escapeHtml(x.code)}" title="点击查看交易流水">
-            ${isExpanded ? '收起 ▴' : '明细 ▾'}
-          </button>
+        <td class="col-qty-cell">
+          <div class="cell-top qty-hold">${qtyText}</div>
+          <div class="cell-bottom qty-avail">${qtyText}</div>
+        </td>
+        <td class="col-price-cell">
+          <div class="cell-top price-cost">${costText}</div>
+          <div class="cell-bottom price-cur">${priceText}</div>
         </td>
       </tr>
     `);
 
-    // 如果当前行已展开，插入详情子行
+    // 如果当前行已展开，插入详情子行（跨 4 列）
     if (isExpanded) {
       const safeId = x.code.replace(/[^a-zA-Z0-9]/g, '_');
       htmlParts.push(`
         <tr class="holding-detail-row" data-detail-code="${escapeHtml(x.code)}">
-          <td colspan="11">
+          <td colspan="4">
             <div class="holding-detail-card" id="detailCard_${safeId}">
               <div class="detail-loading">
                 <span>⏳ 正在拉取【${escapeHtml(x.name)}】的交易记录...</span>
@@ -681,3 +694,54 @@ document.getElementById('holdingTable').addEventListener('click', e => {
     }, 50);
   }
 });
+
+// ── 表头点击排序联动 ─────────────────────────────────────────
+const thMarket = document.querySelector('.th-market');
+const thPnl = document.querySelector('.th-pnl');
+const marketSortIcon = document.getElementById('marketSortIcon');
+const pnlSortIcon = document.getElementById('pnlSortIcon');
+
+function updateSortIcons() {
+  if (!marketSortIcon || !pnlSortIcon) return;
+  if (state.sort === 'market-desc' || state.sort === 'weight-desc') {
+    marketSortIcon.hidden = false;
+    marketSortIcon.textContent = '▼';
+    pnlSortIcon.hidden = true;
+  } else if (state.sort === 'market-asc') {
+    marketSortIcon.hidden = false;
+    marketSortIcon.textContent = '▲';
+    pnlSortIcon.hidden = true;
+  } else if (state.sort === 'pnl-desc') {
+    pnlSortIcon.hidden = false;
+    pnlSortIcon.textContent = '▼';
+    marketSortIcon.hidden = true;
+  } else if (state.sort === 'pnl-asc') {
+    pnlSortIcon.hidden = false;
+    pnlSortIcon.textContent = '▲';
+    marketSortIcon.hidden = true;
+  } else {
+    marketSortIcon.hidden = true;
+    pnlSortIcon.hidden = true;
+  }
+}
+
+if (thMarket) {
+  thMarket.addEventListener('click', () => {
+    state.sort = (state.sort === 'market-desc' || state.sort === 'weight-desc') ? 'market-asc' : 'market-desc';
+    const sel = document.getElementById('sortSelect');
+    if (sel) sel.value = state.sort;
+    updateSortIcons();
+    renderTable(true);
+  });
+}
+
+if (thPnl) {
+  thPnl.addEventListener('click', () => {
+    state.sort = state.sort === 'pnl-desc' ? 'pnl-asc' : 'pnl-desc';
+    const sel = document.getElementById('sortSelect');
+    if (sel) sel.value = state.sort;
+    updateSortIcons();
+    renderTable(true);
+  });
+}
+

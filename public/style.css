@@ -875,6 +875,142 @@
       box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
     }
 
+    /* ── 华宝证券 App 经典 4 列双行持仓表格 ── */
+    .portfolio-app-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 0 !important;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .portfolio-app-table th {
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted, #64748b);
+      border-bottom: 1px solid var(--line);
+      background: rgba(10, 15, 30, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      letter-spacing: 0.3px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      user-select: none;
+    }
+
+    .portfolio-app-table th.th-market {
+      text-align: left;
+      cursor: pointer;
+    }
+    .portfolio-app-table th.th-pnl {
+      text-align: right;
+      cursor: pointer;
+    }
+    .portfolio-app-table th.th-qty,
+    .portfolio-app-table th.th-price {
+      text-align: right;
+      cursor: default;
+    }
+
+    .portfolio-app-table th:hover.th-market,
+    .portfolio-app-table th:hover.th-pnl {
+      color: var(--ink, #f8fafc);
+    }
+
+    .portfolio-app-table th .sort-indicator {
+      display: inline-block;
+      font-size: 10px;
+      color: var(--red, #f43f5e);
+      margin-left: 2px;
+      vertical-align: middle;
+    }
+
+    .portfolio-app-table tbody tr.holding-row {
+      cursor: pointer;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      transition: background-color 0.15s ease;
+    }
+    .portfolio-app-table tbody tr.holding-row:hover {
+      background: rgba(255, 255, 255, 0.04) !important;
+    }
+    .portfolio-app-table tbody tr.holding-row.holding-row-active {
+      background: rgba(0, 240, 255, 0.06) !important;
+    }
+
+    .portfolio-app-table td {
+      padding: 12px 14px;
+      white-space: nowrap;
+      font-family: var(--font-tech);
+      border-bottom: 1px solid var(--line);
+      line-height: 1.35;
+    }
+
+    .portfolio-app-table td.col-stock-market {
+      text-align: left;
+    }
+    .portfolio-app-table td.col-pnl-cell,
+    .portfolio-app-table td.col-qty-cell,
+    .portfolio-app-table td.col-price-cell {
+      text-align: right;
+    }
+
+    /* 上下两行单元格排版（字体等大） */
+    .portfolio-app-table .cell-top {
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.3;
+      margin-bottom: 4px;
+    }
+
+    .portfolio-app-table .cell-bottom {
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.3;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 股票名称行 */
+    .stock-name-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .stock-name {
+      font-family: var(--font-main);
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    /* 港股“沪港”微型深蓝角标（高度还原截图） */
+    .badge-hk-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #2563eb; /* 经典深蓝 */
+      color: #ffffff !important;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 3px;
+      border-radius: 2px;
+      line-height: 1.1;
+      letter-spacing: -0.5px;
+      flex-shrink: 0;
+    }
+
+    /* 华宝证券整行染色风格：盈利整行红、亏损整行亮天蓝 */
+    .portfolio-app-table tbody tr.holding-row.row-loss td {
+      color: #38bdf8 !important; /* 明亮天蓝，亏损 */
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+    }
+    .portfolio-app-table tbody tr.holding-row.row-gain td {
+      color: #f43f5e !important; /* 鲜艳红色，盈利 */
+      text-shadow: 0 0 10px rgba(244, 63, 94, 0.15);
+    }
+    .portfolio-app-table tbody tr.holding-row.row-flat td {
+      color: var(--text, #e2e8f0) !important;
+    }
+
     /* ── 持仓展开详情卡片 ────────────────── */
     .holding-detail-row td {
       padding: 0 !important;

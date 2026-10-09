@@ -212,20 +212,13 @@
             </div>
           </div>
           <div class="table-wrap">
-            <table>
+            <table class="portfolio-app-table">
               <thead>
                 <tr>
-                  <th>证券名称</th>
-                  <th>分类</th>
-                  <th>市值</th>
-                  <th>成本价</th>
-                  <th>现价</th>
-                  <th>今日涨跌</th>
-                  <th>数量</th>
-                  <th>累计盈亏</th>
-                  <th>盈亏比例</th>
-                  <th>仓位占比</th>
-                  <th>操作记录</th>
+                  <th class="th-market" data-sort="market">市值 <span class="sort-indicator" id="marketSortIcon">▲</span></th>
+                  <th class="th-pnl" data-sort="pnl">盈亏 <span class="sort-indicator" id="pnlSortIcon" hidden></span></th>
+                  <th class="th-qty">持仓 / 可用</th>
+                  <th class="th-price">成本 / 现价</th>
                 </tr>
               </thead>
               <tbody id="holdingTable"></tbody>
