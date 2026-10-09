@@ -192,15 +192,43 @@
 
       <!-- Tab 2: 持仓明细 (Portfolio) -->
       <div class="tab-content" id="tab-portfolio">
+        <!-- 持仓核心指标卡片 -->
+        <section class="portfolio-kpi-grid" aria-label="持仓组合指标">
+          <div class="kpi">
+            <div class="kpi-label">总市值</div>
+            <div class="kpi-value" id="pfTotalMarket">-</div>
+            <div class="kpi-foot" id="pfHoldingCount">-</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">累计盈亏</div>
+            <div class="kpi-value" id="pfTotalPnl">-</div>
+            <div class="kpi-foot" id="pfPnlFoot">-</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">组合收益率</div>
+            <div class="kpi-value" id="pfTotalRate">-</div>
+            <div class="kpi-foot" id="pfRateFoot">历史总收益率</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">当日盈亏</div>
+            <div class="kpi-value" id="pfDayPnl">-</div>
+            <div class="kpi-foot" id="pfDayPnlRate">相对昨收 -</div>
+          </div>
+        </section>
+
         <section class="panel">
           <div class="toolbar">
             <div class="controls">
               <input class="search" id="searchInput" type="search" placeholder="搜索名称或代码">
               <select class="select" id="sortSelect" aria-label="排序">
-                <option value="weight-desc">仓位从高到低</option>
+                <option value="weight-desc">持仓占比从高到低</option>
+                <option value="weight-asc">持仓占比从低到高</option>
+                <option value="day-pnl-desc">当日盈亏从高到低</option>
+                <option value="day-pnl-asc">当日盈亏从低到高</option>
+                <option value="market-desc">市值从高到低</option>
+                <option value="market-asc">市值从低到高</option>
                 <option value="pnl-asc">亏损从高到低</option>
                 <option value="pnl-desc">盈利从高到低</option>
-                <option value="market-desc">市值从高到低</option>
                 <option value="rate-asc">收益率从低到高</option>
                 <option value="rate-desc">收益率从高到低</option>
               </select>
@@ -215,13 +243,16 @@
             <table class="portfolio-app-table">
               <thead>
                 <tr>
-                  <th class="th-market" data-sort="market">市值 <span class="sort-indicator" id="marketSortIcon">▲</span></th>
-                  <th class="th-pnl" data-sort="pnl">盈亏 <span class="sort-indicator" id="pnlSortIcon" hidden></span></th>
+                  <th class="th-market" data-sort="market">市值 <span class="sort-indicator" id="marketSortIcon" hidden></span></th>
+                  <th class="th-day-pnl" data-sort="day-pnl">当日盈亏 <span class="sort-indicator" id="dayPnlSortIcon" hidden></span></th>
+                  <th class="th-pnl" data-sort="pnl">累计盈亏 <span class="sort-indicator" id="pnlSortIcon" hidden></span></th>
                   <th class="th-qty">持仓 / 可用</th>
                   <th class="th-price">成本 / 现价</th>
+                  <th class="th-weight" data-sort="weight">持仓占比 <span class="sort-indicator" id="weightSortIcon">▼</span></th>
                 </tr>
               </thead>
               <tbody id="holdingTable"></tbody>
+              <tfoot id="holdingTableFoot"></tfoot>
             </table>
             <div class="empty" id="emptyState" hidden>没有匹配的持仓</div>
           </div>
@@ -237,8 +268,8 @@
             <div class="kpi-foot" id="topHolding">-</div>
           </div>
           <div class="kpi">
-            <div class="kpi-label">前三集中度</div>
-            <div class="kpi-value" id="top3Weight">-</div>
+            <div class="kpi-label">前四集中度</div>
+            <div class="kpi-value" id="top4Weight">-</div>
             <div class="kpi-foot">按实际仓位占比计算</div>
           </div>
         </section>

@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 
 import { DB_PATH, ROOT, isTradingHours } from './db.js';
 import { refreshHoldings } from './refresh.js';
+import { startClosingNotifier } from './notifier.js';
 import holdings, { commonApi } from './routes/holdings.js';
 import transactions from './routes/transactions.js';
 import watchlist, { stockSearch } from './routes/watchlist.js';
@@ -64,6 +65,9 @@ console.log('[startup] 服务启动，立即拉取一次行情...');
 refreshHoldings().catch((err: unknown) => {
   console.error('[startup] 初次抓取失败:', (err as Error).message);
 });
+
+// ── 启动工作日收盘定时推送（下午 16:10）────────────────────
+startClosingNotifier();
 
 // ── 启动服务器 ────────────────────────────────────────────
 const PORT = Number(process.env.PORT) || 9123;

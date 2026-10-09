@@ -48,7 +48,7 @@ function renderKpis(isSilent = false) {
 
   const sorted = [...h].sort((a, b) => b.weight - a.weight);
   const top    = sorted[0] || { weight: 0, name: '-' };
-  const top3   = sorted.slice(0, 3).reduce((a, x) => a + x.weight, 0);
+  const top4   = sorted.slice(0, 4).reduce((a, x) => a + x.weight, 0);
   const gains  = h.filter(x => x.pnl >= 0).length;
 
   // 如果是隐藏数值模式
@@ -73,7 +73,34 @@ function renderKpis(isSilent = false) {
     document.getElementById('monthPnlRate').textContent = `本月累计 ${formatPercent(monthPnlRate)}`;
 
     document.getElementById('topWeight').textContent  = formatPercent(top.weight);
-    document.getElementById('top3Weight').textContent = formatPercent(top3);
+    const top4El = document.getElementById('top4Weight') || document.getElementById('top3Weight');
+    if (top4El) top4El.textContent = formatPercent(top4);
+
+    // 持仓明细 4 大核心指标脱敏
+    const pfMarketEl = document.getElementById('pfTotalMarket');
+    if (pfMarketEl) pfMarketEl.textContent = '¥****';
+
+    const pfPnlEl = document.getElementById('pfTotalPnl');
+    if (pfPnlEl) {
+      pfPnlEl.textContent = '¥****';
+      pfPnlEl.className = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+    }
+
+    const pfRateEl = document.getElementById('pfTotalRate');
+    if (pfRateEl) {
+      pfRateEl.textContent = `${totalRate >= 0 ? '+' : ''}${formatPercent(totalRate)}`;
+      pfRateEl.className = `kpi-value ${totalRate >= 0 ? 'positive' : 'negative'}`;
+    }
+
+    const pfDayEl = document.getElementById('pfDayPnl');
+    if (pfDayEl) {
+      pfDayEl.textContent = '¥****';
+      pfDayEl.className = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
+    }
+    const pfDayRateEl = document.getElementById('pfDayPnlRate');
+    if (pfDayRateEl) {
+      pfDayRateEl.textContent = `相对昨收 ${formatDayPercent(totalDayRate)}`;
+    }
   } else if (isSilent) {
     // 如果是静默更新
     document.getElementById('totalMarket').textContent = moneyFormatter.format(totalMarket);
@@ -96,13 +123,42 @@ function renderKpis(isSilent = false) {
     document.getElementById('monthPnlRate').textContent = `本月累计 ${formatPercent(monthPnlRate)}`;
 
     document.getElementById('topWeight').textContent  = formatPercent(top.weight);
-    document.getElementById('top3Weight').textContent = formatPercent(top3);
+    const top4El = document.getElementById('top4Weight') || document.getElementById('top3Weight');
+    if (top4El) top4El.textContent = formatPercent(top4);
+
+    // 持仓明细 4 大核心指标静默渲染
+    const pfMarketEl = document.getElementById('pfTotalMarket');
+    if (pfMarketEl) pfMarketEl.textContent = moneyFormatter.format(totalMarket);
+
+    const pfPnlEl = document.getElementById('pfTotalPnl');
+    if (pfPnlEl) {
+      pfPnlEl.textContent = moneyFormatter.format(totalPnl);
+      pfPnlEl.className = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+    }
+
+    const pfRateEl = document.getElementById('pfTotalRate');
+    if (pfRateEl) {
+      pfRateEl.textContent = `${totalRate >= 0 ? '+' : ''}${formatPercent(totalRate)}`;
+      pfRateEl.className = `kpi-value ${totalRate >= 0 ? 'positive' : 'negative'}`;
+    }
+
+    const pfDayEl = document.getElementById('pfDayPnl');
+    if (pfDayEl) {
+      pfDayEl.textContent = moneyFormatter.format(totalDayPnl);
+      pfDayEl.className = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
+    }
+    const pfDayRateEl = document.getElementById('pfDayPnlRate');
+    if (pfDayRateEl) {
+      pfDayRateEl.textContent = `相对昨收 ${formatDayPercent(totalDayRate)}`;
+    }
   } else {
     // 使用 GSAP 数字滚动动画
     const prev = state.prevValues || {
       totalMarket: 0, totalPnl: 0, totalPnlRate: 0,
       dayPnl: 0, dayPnlRate: 0, monthPnl: 0, monthPnlRate: 0,
-      topWeight: 0, top3Weight: 0
+      topWeight: 0, top4Weight: 0,
+      pfTotalMarket: 0, pfTotalPnl: 0, pfTotalRate: 0,
+      pfDayPnl: 0, pfDayPnlRate: 0
     };
     
     animateNumericKpi('totalMarket', totalMarket, prev.totalMarket);
@@ -125,14 +181,38 @@ function renderKpis(isSilent = false) {
     animateNumericKpi('monthPnlRate', monthPnlRate, prev.monthPnlRate, true, '本月累计 ');
 
     animateNumericKpi('topWeight', top.weight, prev.topWeight, true);
-    animateNumericKpi('top3Weight', top3, prev.top3Weight, true);
+    animateNumericKpi('top4Weight', top4, prev.top4Weight ?? prev.top3Weight ?? 0, true);
+
+    // 持仓明细 4 大核心指标动画
+    animateNumericKpi('pfTotalMarket', totalMarket, prev.pfTotalMarket ?? prev.totalMarket);
+
+    const pfPnlEl = document.getElementById('pfTotalPnl');
+    if (pfPnlEl) pfPnlEl.className = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+    animateNumericKpi('pfTotalPnl', totalPnl, prev.pfTotalPnl ?? prev.totalPnl);
+
+    const pfRateEl = document.getElementById('pfTotalRate');
+    if (pfRateEl) pfRateEl.className = `kpi-value ${totalRate >= 0 ? 'positive' : 'negative'}`;
+    animateNumericKpi('pfTotalRate', totalRate, prev.pfTotalRate ?? prev.totalPnlRate, true, totalRate >= 0 ? '+' : '');
+
+    const pfDayEl = document.getElementById('pfDayPnl');
+    if (pfDayEl) pfDayEl.className = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
+    animateNumericKpi('pfDayPnl', totalDayPnl, prev.pfDayPnl ?? prev.dayPnl);
+    animateNumericKpi('pfDayPnlRate', totalDayRate, prev.pfDayPnlRate ?? prev.dayPnlRate, true, '相对昨收 ', true);
   }
 
   // 无论静默与否，直接渲染非数字滚动内容及保存状态
   document.getElementById('holdingCount').textContent = `${h.length} 个持仓标的`;
   document.getElementById('topHolding').textContent = top.name;
-  document.getElementById('gainCount').textContent  = `${gains} 个`;
-  document.getElementById('lossCount').textContent  = `${h.length - gains} 个`;
+  const gainEl = document.getElementById('gainCount');
+  if (gainEl) gainEl.textContent = `${gains} 个`;
+  const lossEl = document.getElementById('lossCount');
+  if (lossEl) lossEl.textContent = `${h.length - gains} 个`;
+
+  const pfCountEl = document.getElementById('pfHoldingCount');
+  if (pfCountEl) pfCountEl.textContent = `${h.length} 个持仓标的`;
+
+  const pfPnlFootEl = document.getElementById('pfPnlFoot');
+  if (pfPnlFootEl) pfPnlFootEl.textContent = `${gains} 只盈利 / ${h.length - gains} 只亏损`;
 
   const date = h[0]?.date || '--';
   document.getElementById('asOf').textContent    = date;
@@ -150,7 +230,12 @@ function renderKpis(isSilent = false) {
     monthPnl: s ? (s.month_pnl ?? 0) : 0,
     monthPnlRate: s ? toNum(s.month_pnl_pct) : 0,
     topWeight: top.weight,
-    top3Weight: top3
+    top4Weight: top4,
+    pfTotalMarket: totalMarket,
+    pfTotalPnl: totalPnl,
+    pfTotalRate: totalRate,
+    pfDayPnl: totalDayPnl,
+    pfDayPnlRate: totalDayRate,
   };
 
   renderEffect(totalRate, totalDayPnl, s);
@@ -192,12 +277,16 @@ function currentRows() {
     return matchKw && matchFilter;
   });
   const sorters = {
-    'weight-desc':  (a, b) => b.weight - a.weight,
-    'pnl-asc':      (a, b) => a.pnl - b.pnl,
-    'pnl-desc':     (a, b) => b.pnl - a.pnl,
-    'market-desc':  (a, b) => b.marketValue - a.marketValue,
-    'rate-asc':     (a, b) => a.pnlRate - b.pnlRate,
-    'rate-desc':    (a, b) => b.pnlRate - a.pnlRate,
+    'weight-desc':   (a, b) => b.weight - a.weight,
+    'weight-asc':    (a, b) => a.weight - b.weight,
+    'day-pnl-desc':  (a, b) => b.dayPnl - a.dayPnl,
+    'day-pnl-asc':   (a, b) => a.dayPnl - b.dayPnl,
+    'pnl-asc':       (a, b) => a.pnl - b.pnl,
+    'pnl-desc':      (a, b) => b.pnl - a.pnl,
+    'market-desc':   (a, b) => b.marketValue - a.marketValue,
+    'market-asc':    (a, b) => a.marketValue - b.marketValue,
+    'rate-asc':      (a, b) => a.pnlRate - b.pnlRate,
+    'rate-desc':     (a, b) => b.pnlRate - a.pnlRate,
   };
   return filtered.sort(sorters[state.sort]);
 }
@@ -219,7 +308,7 @@ function renderTable(isSilent = false) {
   const empty = document.getElementById('emptyState');
   empty.hidden = rows.length > 0;
 
-  // 构建表格 HTML：包含主行和可能展开的详情子行（华宝证券 4 列双行经典排版）
+  // 构建表格 HTML：包含主行和可能展开的详情子行（华宝证券风格双行排版 + 仓位占比）
   const htmlParts = [];
   for (const x of rows) {
     const isExpanded = state.expandedHoldingCode === x.code;
@@ -227,6 +316,12 @@ function renderTable(isSilent = false) {
 
     // 格式化各列数值
     const marketText = state.hideValues ? '****' : formatAppMarket(x.marketValue);
+    const dayPnlAmtText = state.hideValues ? '****' : formatAppPnl(x.dayPnl);
+    const dayRateVal = Number(x.dayPnlRate);
+    const dayRateSign = dayRateVal > 0 ? '+' : '';
+    const dayRateText = state.hideValues ? '****' : (dayRateVal !== 0 ? `${dayRateSign}${formatDayPercent(dayRateVal)}` : '0.000%');
+    const dayPnlColorClass = x.dayPnl > 0 ? 'pnl-gain' : (x.dayPnl < 0 ? 'pnl-loss' : 'pnl-flat');
+
     const pnlAmtText = state.hideValues ? '****' : formatAppPnl(x.pnl);
     const pnlRateText = state.hideValues ? '****' : `${Number(x.pnlRate).toFixed(3)}%`;
     const qtyText = state.hideValues ? '****' : String(Math.round(x.quantity));
@@ -236,6 +331,8 @@ function renderTable(isSilent = false) {
     const priceText = state.hideValues ? '****' : (
       x.currentPrice === '-' ? '-' : (isHK ? `HK$${toNum(x.currentPrice).toFixed(3)}` : toNum(x.currentPrice).toFixed(3))
     );
+    const weightText = state.hideValues ? '****' : formatPercent(x.weight);
+    const weightNum = toNum(x.weight);
 
     // 整行颜色类：盈利整行红、亏损整行蓝
     const isProfit = x.pnl > 0;
@@ -251,6 +348,10 @@ function renderTable(isSilent = false) {
           </div>
           <div class="cell-bottom stock-market-val">${marketText}</div>
         </td>
+        <td class="col-day-pnl-cell ${dayPnlColorClass}">
+          <div class="cell-top day-pnl-amt">${dayPnlAmtText}</div>
+          <div class="cell-bottom day-pnl-rate">${dayRateText}</div>
+        </td>
         <td class="col-pnl-cell">
           <div class="cell-top pnl-amt">${pnlAmtText}</div>
           <div class="cell-bottom pnl-rate">${pnlRateText}</div>
@@ -263,15 +364,23 @@ function renderTable(isSilent = false) {
           <div class="cell-top price-cost">${costText}</div>
           <div class="cell-bottom price-cur">${priceText}</div>
         </td>
+        <td class="col-weight-cell">
+          <div class="cell-top weight-val">${weightText}</div>
+          <div class="cell-bottom weight-bar-wrap">
+            <div class="weight-mini-track">
+              <div class="weight-mini-bar" style="width: ${Math.min(100, Math.max(0, weightNum))}%"></div>
+            </div>
+          </div>
+        </td>
       </tr>
     `);
 
-    // 如果当前行已展开，插入详情子行（跨 4 列）
+    // 如果当前行已展开，插入详情子行（跨 6 列全宽）
     if (isExpanded) {
       const safeId = x.code.replace(/[^a-zA-Z0-9]/g, '_');
       htmlParts.push(`
         <tr class="holding-detail-row" data-detail-code="${escapeHtml(x.code)}">
-          <td colspan="4">
+          <td colspan="6">
             <div class="holding-detail-card" id="detailCard_${safeId}">
               <div class="detail-loading">
                 <span>⏳ 正在拉取【${escapeHtml(x.name)}】的交易记录...</span>
@@ -284,6 +393,71 @@ function renderTable(isSilent = false) {
   }
 
   tbody.innerHTML = htmlParts.join('');
+
+  // 渲染表格底部汇总行（总市值、累计盈亏、当日盈亏、持仓占比小计/合计）
+  const tfoot = document.getElementById('holdingTableFoot');
+  if (tfoot) {
+    if (rows.length === 0) {
+      tfoot.innerHTML = '';
+    } else {
+      const isFiltered = rows.length !== state.holdings.length;
+      const curMarket = rows.reduce((a, x) => a + x.marketValue, 0);
+      const curPnl = rows.reduce((a, x) => a + x.pnl, 0);
+      const curDayPnl = rows.reduce((a, x) => a + x.dayPnl, 0);
+      const curWeight = rows.reduce((a, x) => a + x.weight, 0);
+      const baseCapital = curMarket - curPnl;
+      const curPnlRate = baseCapital > 0 ? (curPnl / baseCapital * 100) : 0;
+
+      const marketText = state.hideValues ? '****' : formatAppMarket(curMarket);
+      const pnlAmtText = state.hideValues ? '****' : formatAppPnl(curPnl);
+      const pnlRateText = state.hideValues ? '****' : `${curPnlRate >= 0 ? '+' : ''}${curPnlRate.toFixed(3)}%`;
+      const weightText = state.hideValues ? '****' : formatPercent(curWeight);
+
+      const isProfit = curPnl > 0;
+      const isLoss = curPnl < 0;
+      const rowColorClass = isProfit ? 'row-gain' : (isLoss ? 'row-loss' : 'row-flat');
+
+      const totalDayRateVal = curMarket > 0 ? (curDayPnl / (curMarket - curDayPnl) * 100) : 0;
+      const dayPnlText = state.hideValues ? '****' : formatAppPnl(curDayPnl);
+      const dayRateText = state.hideValues ? '****' : `${totalDayRateVal >= 0 ? '+' : ''}${formatDayPercent(totalDayRateVal)}`;
+      const dayRowColorClass = curDayPnl > 0 ? 'pnl-gain' : (curDayPnl < 0 ? 'pnl-loss' : 'pnl-flat');
+
+      tfoot.innerHTML = `
+        <tr class="holding-total-row ${rowColorClass}">
+          <td class="col-stock-market">
+            <div class="cell-top stock-name-row">
+              <span class="stock-name">${isFiltered ? `小计 (${rows.length}只)` : `合计 (${rows.length}只)`}</span>
+            </div>
+            <div class="cell-bottom stock-market-val">${marketText}</div>
+          </td>
+          <td class="col-day-pnl-cell ${dayRowColorClass}">
+            <div class="cell-top day-pnl-amt">${dayPnlText}</div>
+            <div class="cell-bottom day-pnl-rate">${dayRateText}</div>
+          </td>
+          <td class="col-pnl-cell">
+            <div class="cell-top pnl-amt">${pnlAmtText}</div>
+            <div class="cell-bottom pnl-rate">${pnlRateText}</div>
+          </td>
+          <td class="col-qty-cell">
+            <div class="cell-top qty-hold">--</div>
+            <div class="cell-bottom qty-avail">--</div>
+          </td>
+          <td class="col-price-cell">
+            <div class="cell-top price-cost">标的数</div>
+            <div class="cell-bottom price-cur">${rows.length} 只</div>
+          </td>
+          <td class="col-weight-cell">
+            <div class="cell-top weight-val">${weightText}</div>
+            <div class="cell-bottom weight-bar-wrap">
+              <div class="weight-mini-track">
+                <div class="weight-mini-bar" style="width: ${Math.min(100, Math.max(0, curWeight))}%"></div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+  }
 
   // 若存在展开项，异步加载详情
   if (state.expandedHoldingCode) {
@@ -640,6 +814,7 @@ document.getElementById('searchInput').addEventListener('input', e => {
 });
 document.getElementById('sortSelect').addEventListener('change', e => {
   state.sort = e.target.value;
+  updateSortIcons();
   renderTable(true);
 });
 document.querySelectorAll('.segmented[aria-label="盈亏筛选"] button').forEach(btn => {
@@ -697,37 +872,52 @@ document.getElementById('holdingTable').addEventListener('click', e => {
 
 // ── 表头点击排序联动 ─────────────────────────────────────────
 const thMarket = document.querySelector('.th-market');
+const thDayPnl = document.querySelector('.th-day-pnl');
 const thPnl = document.querySelector('.th-pnl');
+const thWeight = document.querySelector('.th-weight');
 const marketSortIcon = document.getElementById('marketSortIcon');
+const dayPnlSortIcon = document.getElementById('dayPnlSortIcon');
 const pnlSortIcon = document.getElementById('pnlSortIcon');
+const weightSortIcon = document.getElementById('weightSortIcon');
 
 function updateSortIcons() {
-  if (!marketSortIcon || !pnlSortIcon) return;
-  if (state.sort === 'market-desc' || state.sort === 'weight-desc') {
-    marketSortIcon.hidden = false;
-    marketSortIcon.textContent = '▼';
-    pnlSortIcon.hidden = true;
+  if (marketSortIcon) marketSortIcon.hidden = true;
+  if (dayPnlSortIcon) dayPnlSortIcon.hidden = true;
+  if (pnlSortIcon) pnlSortIcon.hidden = true;
+  if (weightSortIcon) weightSortIcon.hidden = true;
+
+  if (state.sort === 'market-desc') {
+    if (marketSortIcon) { marketSortIcon.hidden = false; marketSortIcon.textContent = '▼'; }
   } else if (state.sort === 'market-asc') {
-    marketSortIcon.hidden = false;
-    marketSortIcon.textContent = '▲';
-    pnlSortIcon.hidden = true;
+    if (marketSortIcon) { marketSortIcon.hidden = false; marketSortIcon.textContent = '▲'; }
+  } else if (state.sort === 'day-pnl-desc') {
+    if (dayPnlSortIcon) { dayPnlSortIcon.hidden = false; dayPnlSortIcon.textContent = '▼'; }
+  } else if (state.sort === 'day-pnl-asc') {
+    if (dayPnlSortIcon) { dayPnlSortIcon.hidden = false; dayPnlSortIcon.textContent = '▲'; }
   } else if (state.sort === 'pnl-desc') {
-    pnlSortIcon.hidden = false;
-    pnlSortIcon.textContent = '▼';
-    marketSortIcon.hidden = true;
+    if (pnlSortIcon) { pnlSortIcon.hidden = false; pnlSortIcon.textContent = '▼'; }
   } else if (state.sort === 'pnl-asc') {
-    pnlSortIcon.hidden = false;
-    pnlSortIcon.textContent = '▲';
-    marketSortIcon.hidden = true;
-  } else {
-    marketSortIcon.hidden = true;
-    pnlSortIcon.hidden = true;
+    if (pnlSortIcon) { pnlSortIcon.hidden = false; pnlSortIcon.textContent = '▲'; }
+  } else if (state.sort === 'weight-desc') {
+    if (weightSortIcon) { weightSortIcon.hidden = false; weightSortIcon.textContent = '▼'; }
+  } else if (state.sort === 'weight-asc') {
+    if (weightSortIcon) { weightSortIcon.hidden = false; weightSortIcon.textContent = '▲'; }
   }
 }
 
 if (thMarket) {
   thMarket.addEventListener('click', () => {
-    state.sort = (state.sort === 'market-desc' || state.sort === 'weight-desc') ? 'market-asc' : 'market-desc';
+    state.sort = state.sort === 'market-desc' ? 'market-asc' : 'market-desc';
+    const sel = document.getElementById('sortSelect');
+    if (sel) sel.value = state.sort;
+    updateSortIcons();
+    renderTable(true);
+  });
+}
+
+if (thDayPnl) {
+  thDayPnl.addEventListener('click', () => {
+    state.sort = state.sort === 'day-pnl-desc' ? 'day-pnl-asc' : 'day-pnl-desc';
     const sel = document.getElementById('sortSelect');
     if (sel) sel.value = state.sort;
     updateSortIcons();
@@ -744,4 +934,16 @@ if (thPnl) {
     renderTable(true);
   });
 }
+
+if (thWeight) {
+  thWeight.addEventListener('click', () => {
+    state.sort = state.sort === 'weight-desc' ? 'weight-asc' : 'weight-desc';
+    const sel = document.getElementById('sortSelect');
+    if (sel) sel.value = state.sort;
+    updateSortIcons();
+    renderTable(true);
+  });
+}
+
+updateSortIcons();
 

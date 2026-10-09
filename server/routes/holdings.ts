@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { db, beijingParts, isTradingHours, getFxRate, getFxDate } from '../db.js';
 import { refreshHoldings, getLastRefreshTime } from '../refresh.js';
+import { sendClosingNotification } from '../notifier.js';
 import type { HoldingRow, DailySummary, SumRow, BaseHolding } from '../types.js';
 
 const holdings = new Hono();
@@ -128,6 +129,12 @@ holdings.get('/history', (c) => {
 holdings.post('/refresh', async (c) => {
   const result = await refreshHoldings({ force: true });
   return c.json(result, result.ok || result.skipped ? 200 : 500);
+});
+
+/** POST /push-test — 手动测试收盘收益系统弹窗通知 */
+holdings.post('/push-test', async (c) => {
+  const result = await sendClosingNotification({ forceRefresh: false });
+  return c.json(result);
 });
 
 // ── 通用 / 系统 API 路由（直接挂载在 /api 下）────────────────

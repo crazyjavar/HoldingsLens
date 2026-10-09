@@ -27,6 +27,6 @@ export const state = {
     monthPnl: 0,
     monthPnlRate: 0,
     topWeight: 0,
-    top3Weight: 0
+    top4Weight: 0
   }
 };

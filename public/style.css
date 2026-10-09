@@ -875,7 +875,38 @@
       box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
     }
 
-    /* ── 华宝证券 App 经典 4 列双行持仓表格 ── */
+    /* ── 持仓组合核心指标（总市值 / 累计盈亏 / 组合收益率 / 当日盈亏） ── */
+    .portfolio-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .portfolio-kpi-grid .kpi {
+      min-height: 98px;
+    }
+    .portfolio-kpi-grid .kpi-value.positive {
+      color: var(--red);
+      text-shadow: 0 0 10px rgba(244, 63, 94, 0.2);
+    }
+    .portfolio-kpi-grid .kpi-value.negative {
+      color: #38bdf8;
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+    }
+    @media (max-width: 900px) {
+      .portfolio-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+    }
+    @media (max-width: 480px) {
+      .portfolio-kpi-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ── 华宝证券 App 风格持仓明细表格 ── */
     .portfolio-app-table {
       width: 100%;
       border-collapse: collapse;
@@ -903,7 +934,9 @@
       text-align: left;
       cursor: pointer;
     }
-    .portfolio-app-table th.th-pnl {
+    .portfolio-app-table th.th-day-pnl,
+    .portfolio-app-table th.th-pnl,
+    .portfolio-app-table th.th-weight {
       text-align: right;
       cursor: pointer;
     }
@@ -914,7 +947,9 @@
     }
 
     .portfolio-app-table th:hover.th-market,
-    .portfolio-app-table th:hover.th-pnl {
+    .portfolio-app-table th:hover.th-day-pnl,
+    .portfolio-app-table th:hover.th-pnl,
+    .portfolio-app-table th:hover.th-weight {
       color: var(--ink, #f8fafc);
     }
 
@@ -949,9 +984,11 @@
     .portfolio-app-table td.col-stock-market {
       text-align: left;
     }
+    .portfolio-app-table td.col-day-pnl-cell,
     .portfolio-app-table td.col-pnl-cell,
     .portfolio-app-table td.col-qty-cell,
-    .portfolio-app-table td.col-price-cell {
+    .portfolio-app-table td.col-price-cell,
+    .portfolio-app-table td.col-weight-cell {
       text-align: right;
     }
 
@@ -968,6 +1005,35 @@
       font-weight: 500;
       line-height: 1.3;
       font-variant-numeric: tabular-nums;
+    }
+
+    /* 持仓占比列与微型进度条 */
+    .weight-val {
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.3;
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .weight-bar-wrap {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      height: 14px;
+    }
+    .weight-mini-track {
+      width: 48px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .weight-mini-bar {
+      height: 100%;
+      background: currentColor;
+      border-radius: 2px;
+      transition: width 0.3s ease;
+      opacity: 0.85;
     }
 
     /* 股票名称行 */
@@ -1008,6 +1074,41 @@
       text-shadow: 0 0 10px rgba(244, 63, 94, 0.15);
     }
     .portfolio-app-table tbody tr.holding-row.row-flat td {
+      color: var(--text, #e2e8f0) !important;
+    }
+
+    /* 当日盈亏列按今日表现独立染色（避免被整行累计盈亏色覆盖） */
+    .portfolio-app-table tbody tr.holding-row td.col-day-pnl-cell.pnl-loss {
+      color: #38bdf8 !important;
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+    }
+    .portfolio-app-table tbody tr.holding-row td.col-day-pnl-cell.pnl-gain {
+      color: #f43f5e !important;
+      text-shadow: 0 0 10px rgba(244, 63, 94, 0.15);
+    }
+    .portfolio-app-table tbody tr.holding-row td.col-day-pnl-cell.pnl-flat {
+      color: var(--muted) !important;
+    }
+
+    /* ── 表格底部汇总小计行 ── */
+    .portfolio-app-table tfoot tr.holding-total-row {
+      background: rgba(15, 23, 42, 0.95);
+      border-top: 2px solid rgba(0, 240, 255, 0.4);
+      font-weight: 600;
+    }
+    .portfolio-app-table tfoot tr.holding-total-row td {
+      padding: 12px 14px;
+      border-bottom: none;
+    }
+    .portfolio-app-table tfoot tr.holding-total-row.row-loss td {
+      color: #38bdf8 !important;
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+    }
+    .portfolio-app-table tfoot tr.holding-total-row.row-gain td {
+      color: #f43f5e !important;
+      text-shadow: 0 0 10px rgba(244, 63, 94, 0.15);
+    }
+    .portfolio-app-table tfoot tr.holding-total-row.row-flat td {
       color: var(--text, #e2e8f0) !important;
     }
 
