@@ -237,8 +237,8 @@ function renderTable(isSilent = false) {
         <td>${priceText}</td>
         <td class="${x.dayPnlRate >= 0 ? 'positive' : 'negative'}">
           <div class="day-pnl-cell">
-            <span class="day-pnl-rate">${dayRateText}</span>
             <span class="day-pnl-amt">${dayPnlAmtText}</span>
+            <span class="day-pnl-rate">${dayRateText}</span>
           </div>
         </td>
         <td>${state.hideValues ? '****' : numberFormatter.format(x.quantity)}</td>

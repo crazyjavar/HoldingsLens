@@ -1232,7 +1232,7 @@
     .name-cell strong { color: var(--ink); }
     .code { color: var(--muted); font-size: 12px; }
 
-    /* 今日涨跌：百分比 + 具体金额两行布局 */
+    /* 今日涨跌：具体金额 + 百分比两行布局（字体等大） */
     .day-pnl-cell {
       display: inline-flex;
       flex-direction: column;
@@ -1240,14 +1240,11 @@
       gap: 2px;
       vertical-align: middle;
     }
+    .day-pnl-amt,
     .day-pnl-rate {
+      font-size: 12px;
       font-weight: 600;
       line-height: 1.25;
-    }
-    .day-pnl-amt {
-      font-size: 11px;
-      line-height: 1.25;
-      opacity: 0.82;
       font-variant-numeric: tabular-nums;
     }
 
