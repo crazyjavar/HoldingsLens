@@ -7,8 +7,8 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/node</string>
-        <string>/Users/fei/holdings-analysis/server/dist/server.js</string>
+        <string>/opt/homebrew/bin/bun</string>
+        <string>/Users/fei/holdings-analysis/server/server.ts</string>
     </array>
 
     <key>WorkingDirectory</key>

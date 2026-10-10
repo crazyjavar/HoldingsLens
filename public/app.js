@@ -102,7 +102,7 @@ async function boot() {
     ]);
   } catch (err) {
     document.getElementById('sourceState').textContent = `加载失败: ${err.message}`;
-    document.getElementById('subtitle').textContent = '无法连接到数据服务，请确认 Node 服务已启动';
+    document.getElementById('subtitle').textContent = '无法连接到数据服务，请确认后端服务已启动';
   }
 }
 

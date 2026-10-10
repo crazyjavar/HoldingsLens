@@ -1,6 +1,6 @@
 /**
  * db.ts — 数据库与基础功能
- * 技术栈：node:sqlite（Node 22.5+）
+ * 技术栈：Bun 兼容的 node:sqlite
  * 功能：
  *   1. SQLite 初始化（db 实例、PRAGMA）
  *   2. 表结构创建（8张表 + 3个索引）

@@ -1,8 +1,7 @@
 /**
  * node:sqlite 类型声明
- * Node.js 22.5+ 内置的实验性 SQLite 模块。
- * 官方 @types/node 尚未包含此模块，需自行维护。
- * 待 API 正式稳定后可删除此文件。
+ * 保留项目使用的泛型查询接口；Bun 通过 Node 兼容层运行此模块。
+ * 行类型由调用方指定，运行时仍执行原有 SQLite SQL。
  */
 declare module 'node:sqlite' {
   export interface RunResult {

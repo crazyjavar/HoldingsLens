@@ -15,27 +15,48 @@ HoldingsLens 是一个本地运行的 A 股、港股和 ETF 持仓分析面板�
 
 ## 技术栈
 
-- Node.js 22.5+（使用内置 `node:sqlite`）
-- Hono + `@hono/node-server`
+- Bun 1.4.2+（保留兼容的 `node:sqlite`，无需转换数据库）
+- Hono + `@hono/bun` + `Bun.serve`
 - SQLite
 - 原生 HTML/CSS/JavaScript
-- Chart.js + GSAP（页面通过 CDN 加载）
+- ECharts + GSAP（页面通过 CDN 加载）
 
 ## 启动
 
 ```bash
 cd server
-npm ci
-npm start
+bun install --frozen-lockfile
+bun run start
 ```
 
-浏览器访问 [http://localhost:8123](http://localhost:8123)。开发时可以使用：
+浏览器访问 [http://localhost:9123](http://localhost:9123)。开发时可以使用：
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 如需指定端口或数据库路径，可使用 `PORT` 和 `HOLDINGS_DB_PATH` 环境变量。
+
+Bun 直接运行 TypeScript，开发模式使用 `--watch` 重启整个进程，避免热替换重复注册定时任务。Bun 不执行类型检查，仍需单独运行：
+
+```bash
+bun run typecheck
+bun run build
+bun run test
+bun run start:prod
+```
+
+`bun run start` 直接运行源码，`start:prod` 使用 `build` 生成的 `dist/`，两种方式均由 Bun 启动。依赖版本由 `server/bun.lock` 锁定。
+
+独立 worktree 验收时使用临时数据库和其他端口，例如：
+
+```bash
+PORT=19123 HOLDINGS_DB_PATH=/tmp/holdings-bun-check.db bun run start
+```
+
+此命令会启动正常定时任务；自动化测试只导入 `app.ts`，使用临时数据库，不启动刷新任务或通知。不要让验收进程使用真实持仓库。
+
+macOS 的 `com.fei.holdings-server.plist` 是部署模板，默认使用 `/opt/homebrew/bin/bun` 和 `/Users/fei/holdings-analysis/server/server.ts`。部署前按实际 Bun 路径和项目路径修改，再更新 LaunchAgent；worktree 开发不会自动切换现有服务。
 
 启动时会立即尝试刷新行情，交易时段内每 5 分钟自动刷新。周末、节假日或开盘前行情日期仍是上一交易日时，不会写入新的每日快照。
 
@@ -44,7 +65,7 @@ npm run dev
 - 持仓、交易、历史和自选数据：项目根目录的 `holdings.db`
 - 股票行情：腾讯行情为主，新浪行情为备用
 - HKD/CNY 参考汇率：[Frankfurter](https://frankfurter.dev/)
-- Chart.js 和 GSAP：公共 CDN
+- ECharts 和 GSAP：公共 CDN
 
 汇率获取成功后会写入 `app_metadata`。外部汇率服务暂时不可用时，服务会使用 SQLite 中最近一次成功值；新库首次获取失败时才会回退到内置参考值。
 
@@ -101,8 +122,9 @@ sqlite3 holdings.db ".backup 'holdings.db.backup'"
 │       ├── history.js               # 历史收益与自然月日历
 │       ├── transactions.js          # 买卖流水
 │       └── watchlist.js             # 自选股
-└── server/                          # 后端（TypeScript + tsx）
-    ├── server.ts                    # 服务主入口（Hono + node:sqlite）
+└── server/                          # 后端（TypeScript + Bun）
+    ├── server.ts                    # Bun 服务入口与定时任务
+    ├── app.ts                       # Hono 路由与静态文件（无监听/通知副作用）
     ├── db.ts                        # 数据库连接、建表与迁移
     ├── types.ts                     # 共享类型
     ├── fetcher.ts                   # 行情/汇率抓取（腾讯/新浪、Frankfurter）
@@ -114,10 +136,10 @@ sqlite3 holdings.db ".backup 'holdings.db.backup'"
     │   └── watchlist.ts
     ├── scripts/
     │   └── recalibrate_hk_costs.ts  # 港股加权成本重算
-    ├── dist/                        # tsc 构建产物（npm run start:prod）
+    ├── dist/                        # tsc 构建产物（bun run start:prod）
     ├── tsconfig.json
     ├── package.json
-    └── package-lock.json
+    └── bun.lock
 ```
 
 ## 注意事项
