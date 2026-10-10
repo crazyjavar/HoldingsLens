@@ -2,6 +2,19 @@ import { Hono } from 'hono';
 import { db, getFxRate, refreshFxRate, toSymbol } from '../db.js';
 import { fetchPriceWithName } from '../fetcher.js';
 const transactions = new Hono();
+/** GET / — 最近交易，单次查询替代按持仓逐只加载。 */
+transactions.get('/', (c) => {
+    const requested = Number(c.req.query('limit') || 50);
+    const limit = Number.isFinite(requested) ? Math.min(200, Math.max(1, Math.floor(requested))) : 50;
+    const rows = db.prepare(`
+    SELECT t.*, COALESCE(b.name, t.code) AS name
+    FROM transactions t
+    LEFT JOIN base_holdings b ON b.code = t.code
+    ORDER BY t.trade_date DESC, t.id DESC
+    LIMIT ?
+  `).all(limit);
+    return c.json({ transactions: rows });
+});
 /**
  * POST / — 新增一笔交易（买入/卖出/现金分红）
  * body: { code, type:'buy'|'sell'|'dividend', trade_date, quantity, amount_cny, price?, note? }

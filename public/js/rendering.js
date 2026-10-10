@@ -7,12 +7,14 @@ import {
 import { animateNumericKpi, renderEffect } from './effects.js';
 import { renderComparePanel } from './indices.js';
 
-export async function loadLatest(isSilent = false) {
+let latestRenderSnapshot = null;
+
+export async function loadLatest(isSilent = false, forceRender = false) {
   const resp = await fetch('/api/holdings/latest');
   if (!resp.ok) throw new Error(`API ${resp.status}`);
   const data = await resp.json();
 
-  state.holdings = (data.holdings || []).map(row => ({
+  const holdings = (data.holdings || []).map(row => ({
     date:        row.date,
     name:        row.name,
     code:        row.code,
@@ -30,9 +32,15 @@ export async function loadLatest(isSilent = false) {
     change:      row.change_pct || '-',
   }));
 
+  // updated_at 只是抓取时间；周战报可用状态等展示字段仍参与比较。
+  const { updated_at, ...summaryFields } = data.summary || {};
+  const snapshot = JSON.stringify([holdings, data.summary ? summaryFields : null]);
   state.summary = data.summary;
+  if (!forceRender && snapshot === latestRenderSnapshot) return;
+  state.holdings = holdings;
   document.getElementById('sourceState').textContent = 'API 实时数据';
   render(isSilent);
+  latestRenderSnapshot = snapshot;
 }
 
 // ── KPI 渲染 ──────────────────────────────────────────────

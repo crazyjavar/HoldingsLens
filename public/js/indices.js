@@ -3,6 +3,8 @@ import { state } from './state.js';
 import { toNum, escapeHtml } from './utils.js';
 
 // ── 加载并渲染大盘指数 ───────────────────────────────────────
+let indicesRenderSnapshot = null;
+
 export async function loadIndices() {
   const indexBar = document.getElementById('indexBar');
   if (!indexBar) return;
@@ -12,6 +14,9 @@ export async function loadIndices() {
     const data = await resp.json();
     const indices = data.indices || [];
     
+    const snapshot = JSON.stringify([indices, data.month_change || null]);
+    if (snapshot === indicesRenderSnapshot) return;
+
     // 缓存数据
     state.indicesLive = indices;
     state.indicesMonthChange = data.month_change || null;
@@ -21,6 +26,7 @@ export async function loadIndices() {
 
     if (indices.length === 0) {
       indexBar.innerHTML = '';
+      indicesRenderSnapshot = snapshot;
       return;
     }
     indexBar.innerHTML = indices.map(idx => {
@@ -46,6 +52,7 @@ export async function loadIndices() {
         </div>
       `;
     }).join('');
+    indicesRenderSnapshot = snapshot;
   } catch (err) {
     console.error('Failed to load indices:', err);
   }

@@ -27,17 +27,10 @@ export async function loadMgmt() {
 }
 
 async function loadAllTx() {
-  const codes = mgmtHoldingsList.map(h => h.code);
-  const allTx = [];
-  await Promise.all(codes.map(async code => {
-    const r = await fetch(`/api/transactions/${encodeURIComponent(code)}`);
-    if (!r.ok) return;
-    const d = await r.json();
-    (d.transactions || []).forEach(t => allTx.push(t));
-  }));
-  // 按交易日降序排序
-  allTx.sort((a, b) => b.trade_date.localeCompare(a.trade_date) || b.id - a.id);
-  renderTxList(allTx.slice(0, 50)); // 最近50条
+  const resp = await fetch('/api/transactions?limit=50');
+  if (!resp.ok) return;
+  const data = await resp.json();
+  renderTxList(data.transactions || []);
 }
 
 function renderTxList(list) {
@@ -63,7 +56,7 @@ function renderTxList(list) {
 
     return `<tr>
       <td>${escapeHtml(tx.trade_date)}</td>
-      <td><span class="${cls}">${escapeHtml(nameMap[tx.code] || tx.code)}</span><br><span style="color:var(--muted);font-size:11px">${escapeHtml(tx.code)}</span></td>
+      <td><span class="${cls}">${escapeHtml(tx.name || nameMap[tx.code] || tx.code)}</span><br><span style="color:var(--muted);font-size:11px">${escapeHtml(tx.code)}</span></td>
       <td class="${dayClass}">${dayPnlStr}</td>
       <td class="${cls}">${label}</td>
       <td>${tx.quantity}</td>
@@ -91,7 +84,7 @@ export async function undoTx(btn) {
     const resp = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
     const data = await resp.json();
     if (!resp.ok) { alert(data.error || '撤销失败'); btn.disabled = false; return; }
-    await Promise.all([loadMgmt(), loadLatest()]);
+    await Promise.all([loadMgmt(), loadLatest(false, true)]);
   } catch (e) { alert('网络错误'); btn.disabled = false; }
 }
 window.undoTx = undoTx;
@@ -148,7 +141,7 @@ document.getElementById('mgmtSubmit').addEventListener('click', async () => {
     document.getElementById('mgmtNote').value = '';
     document.getElementById('mgmtHint').textContent = '';
     // 刷新持仓 + 交易记录
-    await Promise.all([loadMgmt(), loadLatest()]);
+    await Promise.all([loadMgmt(), loadLatest(false, true)]);
   } catch (e) {
     errEl.textContent = '网络错误';
   } finally {

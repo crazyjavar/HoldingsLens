@@ -7,9 +7,10 @@
   "scripts": {
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start:prod": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

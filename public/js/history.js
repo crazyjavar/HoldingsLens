@@ -5,21 +5,34 @@ import {
   historyValueDisplay
 } from './utils.js';
 
+let historyRenderSnapshot = null;
+
 export async function loadHistory(days = 5000) {
   const resp = await fetch(`/api/holdings/history?days=${days}`);
   if (!resp.ok) return;
   const data = await resp.json();
-  state.historyData = data.history || [];
-  renderHistoryChart(state.historyData);
+  const history = data.history || [];
+  const snapshot = JSON.stringify(history);
+  if (snapshot === historyRenderSnapshot && typeof echarts !== 'undefined') return;
+  state.historyData = history;
+  renderHistoryChart(history);
+  historyRenderSnapshot = typeof echarts !== 'undefined' ? snapshot : null;
 }
 
 // ── 历史趋势图渲染 ────────────────────────────────────────
 let historyChartInstance = null;
+let incomeCalendarInstance = null;
+// 切换日历/直角坐标系时替换配置，保留图表实例。
+let calendarCoordinateSystem = null;
 
 // 收益日历只处理 YYYY-MM-DD。统一使用 UTC 日历坐标，
 // 避免浏览器所在时区将东八区零点解析成前一天。
 export function resizeHistoryChart() {
-  if (historyChartInstance) historyChartInstance.resize();
+  for (const chart of [historyChartInstance, incomeCalendarInstance]) {
+    if (!chart || chart.isDisposed()) continue;
+    const dom = chart.getDom();
+    if (dom.clientWidth > 0 && dom.clientHeight > 0) chart.resize();
+  }
 }
 
 function renderIncomeCalendar(history) {
@@ -27,6 +40,8 @@ function renderIncomeCalendar(history) {
   const summary = document.getElementById('calendarSummary');
   if (!calendarDom || !summary) return;
   if (!history.length) {
+    if (incomeCalendarInstance && !incomeCalendarInstance.isDisposed()) incomeCalendarInstance.clear();
+    calendarCoordinateSystem = null;
     summary.textContent = '暂无收益数据';
     return;
   }
@@ -35,11 +50,6 @@ function renderIncomeCalendar(history) {
   const rows = [...history].sort((a, b) => a.date.localeCompare(b.date));
   const granularity = state.historyGranularity;
 
-  if (historyChartInstance) {
-    historyChartInstance.dispose();
-    historyChartInstance = null;
-  }
-
   // ECharts 依赖公共 CDN，离线/加载失败时给出降级提示而非抛错。
   if (typeof echarts === 'undefined') {
     calendarDom.innerHTML = '';
@@ -47,12 +57,16 @@ function renderIncomeCalendar(history) {
     return;
   }
 
-  historyChartInstance = echarts.init(calendarDom);
+  if (!incomeCalendarInstance || incomeCalendarInstance.isDisposed()) {
+    calendarDom.innerHTML = '';
+    incomeCalendarInstance = echarts.init(calendarDom);
+    calendarCoordinateSystem = null;
+  }
 
   if (granularity === 'day') {
-    renderDayHeatmap(historyChartInstance, rows, isAmt, summary);
+    renderDayHeatmap(incomeCalendarInstance, rows, isAmt, summary);
   } else {
-    renderPeriodHeatmap(historyChartInstance, rows, isAmt, granularity, summary);
+    renderPeriodHeatmap(incomeCalendarInstance, rows, isAmt, granularity, summary);
   }
 }
 
@@ -122,7 +136,8 @@ function renderDayHeatmap(chart, rows, isAmt, summary) {
       data: data,
       itemStyle: { borderRadius: 2 }
     }
-  });
+  }, { notMerge: calendarCoordinateSystem !== 'calendar' });
+  calendarCoordinateSystem = 'calendar';
 }
 
 function renderPeriodHeatmap(chart, rows, isAmt, granularity, summary) {
@@ -214,7 +229,8 @@ function renderPeriodHeatmap(chart, rows, isAmt, granularity, summary) {
         }
       }
     }
-  });
+  }, { notMerge: calendarCoordinateSystem !== 'cartesian2d' });
+  calendarCoordinateSystem = 'cartesian2d';
 }
 
 export function renderHistoryChart(history) {
@@ -237,16 +253,12 @@ export function renderHistoryChart(history) {
   if (chartView) chartView.hidden = state.historyViewMode !== 'bar';
   if (calendarView) calendarView.hidden = state.historyViewMode !== 'calendar';
 
-  if (historyChartInstance) {
-    historyChartInstance.dispose();
-    historyChartInstance = null;
-  }
-
   if (state.historyViewMode === 'calendar') {
     renderIncomeCalendar(calendarHistory);
   } else {
     renderHistoryBarChart(barHistory);
   }
+  resizeHistoryChart();
 }
 
 function renderHistoryBarChart(history) {
@@ -285,7 +297,10 @@ function renderHistoryBarChart(history) {
     return;
   }
 
-  historyChartInstance = echarts.init(chartDom);
+  if (!historyChartInstance || historyChartInstance.isDisposed()) {
+    chartDom.innerHTML = '';
+    historyChartInstance = echarts.init(chartDom);
+  }
 
   historyChartInstance.setOption({
     backgroundColor: 'transparent',

@@ -1,69 +1,84 @@
 import { Hono } from 'hono';
 import { beijingParts, isTradingHours } from '../db.js';
+import { createCachedResource } from '../cache.js';
 const indices = new Hono();
-// ── 大盘指数内存缓存 ─────────────────────────────────────────
-let cachedIndicesData = null;
-let cachedIndicesTimestamp = 0;
-let indicesFetchPromise = null;
-async function fetchIndicesDataDirect() {
-    const symbols = [
-        'sh000001', 'sz399001', 'sz399006',
-        'hkHSI', 'hkHSTECH', 'sh518880',
-        'sh000510', 'sh000852', 'sh000688', 'bj899050'
-    ];
-    const url = `https://qt.gtimg.cn/q=${symbols.join(',')}`;
-    // 并行获取实时指数、国内现货黄金(SGE_AU9999)以及历史K线
-    const klineSymbols = ['sh000001', 'sz399001', 'sz399006'];
-    const klinePromises = klineSymbols.map((sym) => fetch(`https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sym}&scale=240&ma=no&datalen=40`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(6000)
-    }).then(r => r.json()).catch(() => []));
-    const sgePromise = fetch('https://hq.sinajs.cn/list=SGE_AU9999', {
+// 实时行情每 30 秒（休市 5 分钟）；日 K 线每 15 分钟（休市 1 小时）。
+// 黄金和 K 线在已有缓存时后台刷新，不再拖住实时指数。
+const klineSymbols = ['sh000001', 'sz399001', 'sz399006'];
+const liveSymbols = [
+    ...klineSymbols, 'hkHSI', 'hkHSTECH', 'sh518880',
+    'sh000510', 'sh000852', 'sh000688', 'bj899050'
+];
+const getLiveBody = createCachedResource('indices', async () => {
+    const resp = await fetch(`https://qt.gtimg.cn/q=${liveSymbols.join(',')}`, {
+        headers: { Referer: 'https://gu.qq.com/', 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok)
+        throw new Error(`腾讯指数接口 HTTP ${resp.status}`);
+    const body = new TextDecoder('gbk').decode(await resp.arrayBuffer());
+    if (!body.includes('="'))
+        throw new Error('腾讯指数行情为空');
+    return body;
+}, '');
+const getGold = createCachedResource('gold', async () => {
+    const r = await fetch('https://hq.sinajs.cn/list=SGE_AU9999', {
         headers: {
             Referer: 'https://finance.sina.com.cn/',
             'User-Agent': 'Mozilla/5.0',
         },
         signal: AbortSignal.timeout(10000),
-    }).then(async (r) => {
-        if (!r.ok)
-            return null;
-        const buf = await r.arrayBuffer();
-        const body = new TextDecoder('gbk').decode(buf);
-        const match = body.match(/="([^"]+)"/);
-        if (!match)
-            return null;
-        const fields = match[1].split(',');
-        if (fields.length < 10)
-            return null;
-        const current = parseFloat(fields[3]) || 0;
-        const prevClose = parseFloat(fields[9]) || 0;
-        if (current === 0)
-            return null;
-        const changeVal = prevClose > 0 ? current - prevClose : 0;
-        const changePct = prevClose > 0 ? (changeVal / prevClose) * 100 : 0;
-        return {
-            symbol: 'SGE_AU9999',
-            name: '国内现货黄金',
-            current,
-            changeVal,
-            changePct,
-        };
-    }).catch(() => null);
-    const [resp, sgeData, ...klineResults] = await Promise.all([
-        fetch(url, {
-            headers: {
-                Referer: 'https://gu.qq.com/',
-                'User-Agent': 'Mozilla/5.0',
-            },
-            signal: AbortSignal.timeout(10000),
-        }),
-        sgePromise,
-        ...klinePromises
-    ]);
-    if (!resp.ok)
-        throw new Error(`腾讯指数接口 HTTP ${resp.status}`);
-    const buf = await resp.arrayBuffer();
+    });
+    if (!r.ok)
+        throw new Error(`黄金接口 HTTP ${r.status}`);
+    const buf = await r.arrayBuffer();
     const body = new TextDecoder('gbk').decode(buf);
+    const match = body.match(/="([^"]+)"/);
+    if (!match)
+        throw new Error('黄金行情为空');
+    const fields = match[1].split(',');
+    if (fields.length < 10)
+        throw new Error('黄金字段不完整');
+    const current = parseFloat(fields[3]) || 0;
+    const prevClose = parseFloat(fields[9]) || 0;
+    if (current === 0)
+        throw new Error('黄金价格无效');
+    const changeVal = prevClose > 0 ? current - prevClose : 0;
+    const changePct = prevClose > 0 ? (changeVal / prevClose) * 100 : 0;
+    return {
+        symbol: 'SGE_AU9999',
+        name: '国内现货黄金',
+        current,
+        changeVal,
+        changePct,
+    };
+}, null);
+const getKlines = klineSymbols.map(sym => createCachedResource(`kline:${sym}`, async () => {
+    const resp = await fetch(`https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sym}&scale=240&ma=no&datalen=40`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(6000),
+    });
+    if (!resp.ok)
+        throw new Error(`K线接口 HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!Array.isArray(data))
+        throw new Error('K线响应无效');
+    const rows = data.filter(row => row?.day && Number(row.close) > 0);
+    if (!rows.length)
+        throw new Error('K线行情为空');
+    return rows;
+}, []));
+async function getIndicesData() {
+    const trading = isTradingHours();
+    const nowBj = beijingParts();
+    const dateKey = `${nowBj.year}-${nowBj.month}-${nowBj.date}`;
+    const liveTtl = trading ? 30_000 : 300_000;
+    const klineTtl = trading ? 900_000 : 3_600_000;
+    const [body, sgeData, ...klineResults] = await Promise.all([
+        getLiveBody(liveTtl, dateKey, true),
+        getGold(liveTtl, dateKey),
+        ...getKlines.map(get => get(klineTtl, dateKey)),
+    ]);
     const itemsMap = {};
     const priceMap = {}; // 用以辅助计算 K 线对比
     for (const entry of body.split(';')) {
@@ -174,36 +189,6 @@ async function fetchIndicesDataDirect() {
         }
     });
     return { indices: result, month_change: monthChange };
-}
-async function getIndicesData() {
-    const trading = isTradingHours();
-    const ttl = trading ? 30 * 1000 : 5 * 60 * 1000; // 交易时段 30s，非交易时段 5min
-    const now = Date.now();
-    if (cachedIndicesData && (now - cachedIndicesTimestamp < ttl)) {
-        return cachedIndicesData;
-    }
-    if (indicesFetchPromise) {
-        return indicesFetchPromise;
-    }
-    indicesFetchPromise = (async () => {
-        try {
-            const data = await fetchIndicesDataDirect();
-            cachedIndicesData = data;
-            cachedIndicesTimestamp = Date.now();
-            return data;
-        }
-        catch (err) {
-            console.warn(`[indices] 抓取失败 (${err.message})，降级使用最近有效缓存`);
-            if (cachedIndicesData) {
-                return cachedIndicesData;
-            }
-            return { indices: [], month_change: {} };
-        }
-        finally {
-            indicesFetchPromise = null;
-        }
-    })();
-    return indicesFetchPromise;
 }
 /** GET / — 获取大盘指数行情（上证、深证、创业板、恒生科技、黄金等） */
 indices.get('/', async (c) => {

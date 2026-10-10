@@ -2,11 +2,17 @@
 import { state } from './state.js';
 import { toNum, escapeHtml } from './utils.js';
 
+let watchlistLoaded = false;
+
 export async function loadWatchlist(isSilent = false) {
   const resp = await fetch('/api/watchlist');
   if (!resp.ok) return;
   const data = await resp.json();
-  renderWatchlist(data.watchlist || [], isSilent);
+  const list = data.watchlist || [];
+  // 与当前列表比较，拖拽后的本地顺序也参与判断。
+  if (watchlistLoaded && JSON.stringify(list) === JSON.stringify(wlList)) return;
+  renderWatchlist(list, isSilent);
+  watchlistLoaded = true;
 }
 
 function pctBadgeValueOnly(totalPct) {
