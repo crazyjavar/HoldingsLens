@@ -33,4 +33,10 @@ Bun 1.4.2，Hono 4.13.13，@hono/bun 1.0.1。
 
 HTTP 和交易验收使用临时数据库；缓存测试使用模拟行情，未向行情源发出验收请求。源码与生产入口启动检查发生在周六，启动行情刷新按原逻辑跳过。
 
-尚未将 Bun 分支合并到 main，也未替换现有 LaunchAgent。工作区的 plist 是 Bun 部署模板；正式切换需合并代码、安装锁定依赖、更新 LaunchAgent 并重启。未进行真实网络行情或交易日收盘通知的长时间验收，也未声称已取得具体性能倍数。
+上述独立验收完成时尚未合并分支或替换 LaunchAgent。未进行真实网络行情或交易日收盘通知的长时间验收，也未声称已取得具体性能倍数。
+
+## 正式服务切换
+
+2026-10-10 已将 Bun 分支合并到主工作区，安装锁定依赖，并将 `com.fei.holdings-server` LaunchAgent 改为 `/opt/homebrew/bin/bun /Users/fei/holdings-analysis/server/server.ts`。实际监听 9123 的进程为 Bun 1.4.2；主页、app.js、状态与最近交易接口均返回 200。
+
+修正验收脚本对中文工作目录的 URL 解码，主工作区类型检查、构建和全部 10 项测试通过。数据库在线备份为 `holdings.db.before_bun_20261010_163104.backup`，旧启动配置备份为 `server/holdings-node-launchagent.plist.backup`。切换后 SQLite 完整性检查为 ok，六张业务表行数与切换前一致。

@@ -4,11 +4,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 for (const entry of ['app.ts', 'dist/app.js']) {
   test(`Bun HTTP 验收 (${entry})：静态文件、SQLite 写入与撤销`, async () => {
     const folder = mkdtempSync(join(tmpdir(), 'holdings-bun-'));
-    const serverRoot = new URL('..', import.meta.url).pathname;
+    const serverRoot = fileURLToPath(new URL('..', import.meta.url));
     const child = Bun.spawn([process.execPath, '--eval', `
       import app from ${JSON.stringify('./' + entry)};
       const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: app.fetch });
