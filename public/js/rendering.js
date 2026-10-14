@@ -191,21 +191,49 @@ function renderKpis(isSilent = false) {
     animateNumericKpi('topWeight', top.weight, prev.topWeight, true);
     animateNumericKpi('top4Weight', top4, prev.top4Weight ?? prev.top3Weight ?? 0, true);
 
-    // 持仓明细 4 大核心指标动画
-    animateNumericKpi('pfTotalMarket', totalMarket, prev.pfTotalMarket ?? prev.totalMarket);
+    // 持仓明细 4 大核心指标动画：仅当持仓页处于可见状态时才启动 GSAP 滚动动画，不可见时直接赋值，避免后台无用频繁 DOM 计算
+    const isPfVisible = Boolean(document.getElementById('tab-portfolio')?.classList.contains('active'));
+    if (isPfVisible) {
+      animateNumericKpi('pfTotalMarket', totalMarket, prev.pfTotalMarket ?? prev.totalMarket);
 
-    const pfPnlEl = document.getElementById('pfTotalPnl');
-    if (pfPnlEl) pfPnlEl.className = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
-    animateNumericKpi('pfTotalPnl', totalPnl, prev.pfTotalPnl ?? prev.totalPnl);
+      const pfPnlEl = document.getElementById('pfTotalPnl');
+      if (pfPnlEl) pfPnlEl.className = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+      animateNumericKpi('pfTotalPnl', totalPnl, prev.pfTotalPnl ?? prev.totalPnl);
 
-    const pfRateEl = document.getElementById('pfTotalRate');
-    if (pfRateEl) pfRateEl.className = `kpi-value ${totalRate >= 0 ? 'positive' : 'negative'}`;
-    animateNumericKpi('pfTotalRate', totalRate, prev.pfTotalRate ?? prev.totalPnlRate, true, totalRate >= 0 ? '+' : '');
+      const pfRateEl = document.getElementById('pfTotalRate');
+      if (pfRateEl) pfRateEl.className = `kpi-value ${totalRate >= 0 ? 'positive' : 'negative'}`;
+      animateNumericKpi('pfTotalRate', totalRate, prev.pfTotalRate ?? prev.totalPnlRate, true, totalRate >= 0 ? '+' : '');
 
-    const pfDayEl = document.getElementById('pfDayPnl');
-    if (pfDayEl) pfDayEl.className = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
-    animateNumericKpi('pfDayPnl', totalDayPnl, prev.pfDayPnl ?? prev.dayPnl);
-    animateNumericKpi('pfDayPnlRate', totalDayRate, prev.pfDayPnlRate ?? prev.dayPnlRate, true, '相对昨收 ', true);
+      const pfDayEl = document.getElementById('pfDayPnl');
+      if (pfDayEl) pfDayEl.className = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
+      animateNumericKpi('pfDayPnl', totalDayPnl, prev.pfDayPnl ?? prev.dayPnl);
+      animateNumericKpi('pfDayPnlRate', totalDayRate, prev.pfDayPnlRate ?? prev.dayPnlRate, true, '相对昨收 ', true);
+    } else {
+      const pfMarketEl = document.getElementById('pfTotalMarket');
+      if (pfMarketEl) pfMarketEl.textContent = moneyFormatter.format(totalMarket);
+
+      const pfPnlEl = document.getElementById('pfTotalPnl');
+      if (pfPnlEl) {
+        pfPnlEl.textContent = moneyFormatter.format(totalPnl);
+        pfPnlEl.className = `kpi-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+      }
+
+      const pfRateEl = document.getElementById('pfTotalRate');
+      if (pfRateEl) {
+        pfRateEl.textContent = `${totalRate >= 0 ? '+' : ''}${formatPercent(totalRate)}`;
+        pfRateEl.className = `kpi-value ${totalRate >= 0 ? 'positive' : 'negative'}`;
+      }
+
+      const pfDayEl = document.getElementById('pfDayPnl');
+      if (pfDayEl) {
+        pfDayEl.textContent = moneyFormatter.format(totalDayPnl);
+        pfDayEl.className = `kpi-value ${totalDayPnl >= 0 ? 'positive' : 'negative'}`;
+      }
+      const pfDayRateEl = document.getElementById('pfDayPnlRate');
+      if (pfDayRateEl) {
+        pfDayRateEl.textContent = `相对昨收 ${formatDayPercent(totalDayRate)}`;
+      }
+    }
   }
 
   // 无论静默与否，直接渲染非数字滚动内容及保存状态
@@ -477,8 +505,10 @@ function renderTable(isSilent = false) {
     }
   }
 
-  // 若非静默刷新，执行 GSAP 行错开渐显位移动画
-  if (!isSilent && rows.length > 0 && typeof gsap !== 'undefined') {
+  // 若非静默刷新且持仓 Tab 当前处于可见状态，才执行 GSAP 行错开渐显位移动画
+  // 处于隐藏 Tab 时直接呈现，避免对不可见的 11 行表格注册无效跑动的 GSAP Tween
+  const isPortfolioTabVisible = Boolean(document.getElementById('tab-portfolio')?.classList.contains('active'));
+  if (!isSilent && rows.length > 0 && isPortfolioTabVisible && typeof gsap !== 'undefined') {
     gsap.fromTo("#holdingTable tr.holding-row", 
       { autoAlpha: 0, y: 10 }, 
       { autoAlpha: 1, y: 0, duration: 0.35, stagger: 0.02, ease: "power2.out", clearProps: "all" }

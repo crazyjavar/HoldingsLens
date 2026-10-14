@@ -32,6 +32,7 @@ refreshBtn.addEventListener('click', async () => {
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tabName = btn.dataset.tab;
+    if (btn.classList.contains('active')) return;
     
     // 激活按钮样式
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -42,15 +43,14 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     const activeTab = document.getElementById(`tab-${tabName}`);
     activeTab.classList.add('active');
 
-    // 执行 GSAP Tab 内容入场动画
+    // 执行 GPU 友好的平滑淡入动效，使用 requestAnimationFrame 避免与 display 变更同一帧触发强制同步重排 (Forced Reflow)
     if (typeof gsap !== 'undefined') {
-      const children = activeTab.children;
-      if (children.length > 0) {
-        gsap.fromTo(children,
-          { autoAlpha: 0, y: 15 },
-          { autoAlpha: 1, y: 0, duration: 0.45, stagger: 0.05, ease: "power2.out", clearProps: "all" }
+      requestAnimationFrame(() => {
+        gsap.fromTo(activeTab,
+          { opacity: 0 },
+          { opacity: 1, duration: 0.2, ease: "power2.out", clearProps: "opacity" }
         );
-      }
+      });
     }
     
     // 如果切回 overview 重新 resize 图表以防 canvas 宽度变为 0
@@ -59,7 +59,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         resizeHistoryChart();
       }, 50);
     }
-    // 如果切到交易记录页，加载/刷新数据
+    // 如果切到交易记录页，按需加载/刷新数据
     if (tabName === 'transactions') {
       loadMgmt();
     }
@@ -97,7 +97,6 @@ async function boot() {
       loadLatest(false),
       loadHistory(state.historyDays),
       loadWatchlist(false),
-      loadMgmt(),
       loadIndices(),
     ]);
   } catch (err) {
