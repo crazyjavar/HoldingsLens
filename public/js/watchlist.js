@@ -41,7 +41,13 @@ export const isFundItem = item => {
 };
 
 let wlTab = (() => {
-  try { return localStorage.getItem('wlTab') === 'fund' ? 'fund' : 'stock'; } catch (_) { return 'stock'; }
+  try {
+    const saved = localStorage.getItem('wlTab');
+    if (['all', 'stock', 'fund'].includes(saved)) return saved;
+    return 'all';
+  } catch (_) {
+    return 'all';
+  }
 })();
 
 function syncTabUI() {
@@ -53,14 +59,20 @@ function syncTabUI() {
 function updateTabCounts(list) {
   const fund = list.filter(it => isFundItem(it)).length;
   const stock = list.length - fund;
+  const aEl = document.getElementById('wlCountAll');
   const sEl = document.getElementById('wlCountStock');
   const fEl = document.getElementById('wlCountFund');
+  if (aEl) aEl.textContent = list.length;
   if (sEl) sEl.textContent = stock;
   if (fEl) fEl.textContent = fund;
 }
 
 // 当前页签下可见的自选项
-const visibleWlItems = list => list.filter(it => (wlTab === 'fund') === isFundItem(it));
+const visibleWlItems = list => {
+  if (wlTab === 'fund') return list.filter(it => isFundItem(it));
+  if (wlTab === 'stock') return list.filter(it => !isFundItem(it));
+  return list; // 'all'
+};
 
 function marketBadge(code, name = '') {
   if (code.endsWith('.HK')) return '<span class="wl-market-badge hk">港</span>';
@@ -90,9 +102,10 @@ function renderWatchlist(list, isSilent = false) {
   if (!visible.length) {
     container.innerHTML = '';
     empty.hidden = false;
+    const tabName = wlTab === 'fund' ? '基金' : (wlTab === 'stock' ? '股票' : '自选');
     empty.textContent = list.length
-      ? `「${wlTab === 'fund' ? '基金' : '股票'}」下暂无自选项，切换页签或点击“＋”添加`
-      : '暂无自选股，点击“＋”开始监控';
+      ? `「${tabName}」分类下暂无自选项，切换页签或点击“＋”添加`
+      : '暂无自选标的，点击“＋”开始监控';
     return;
   }
   empty.hidden = true;
@@ -296,10 +309,14 @@ document.getElementById('wlAddBtn').addEventListener('click', async () => {
     document.getElementById('wlCode').value = '';
     document.getElementById('wlName').value = '';
     document.getElementById('wlNote').value = '';
-    // 新标的若不属于当前页签（如在“股票”页签下加了基金），自动切过去让用户看得见
-    const targetTab = isFundItem({ code, name: finalName }) ? 'fund' : 'stock';
-    if (targetTab !== wlTab) {
-      wlTab = targetTab;
+    // 新标的若在当前分类下不可见（如在“股票”页签下加了基金），自动切过去让用户看得见
+    const isFund = isFundItem({ code, name: finalName });
+    if (wlTab === 'stock' && isFund) {
+      wlTab = 'fund';
+      try { localStorage.setItem('wlTab', wlTab); } catch (_) {}
+      syncTabUI();
+    } else if (wlTab === 'fund' && !isFund) {
+      wlTab = 'stock';
       try { localStorage.setItem('wlTab', wlTab); } catch (_) {}
       syncTabUI();
     }

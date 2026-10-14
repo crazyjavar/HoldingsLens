@@ -148,7 +148,7 @@ async function getIndicesData(): Promise<IndicesData> {
 
   const orderedSymbols = [
     'sh000001', 'sz399001', 'sz399006', 
-    'hkHSI', 'hkHSTECH', 'sh518880', 'SGE_AU9999',
+    'hkHSI', 'hkHSTECH', 'SGE_AU9999', 'sh518880',
     'sh000510', 'sh000852', 'sh000688', 'bj899050'
   ];
 

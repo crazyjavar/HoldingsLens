@@ -37,3 +37,4 @@ holdings.db
 *.backup
 *.backup*
 holdings.db*
+worktree-*/
